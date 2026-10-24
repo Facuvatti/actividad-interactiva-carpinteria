@@ -46,7 +46,7 @@ const allToolIds=[...new Set(toolDefs.flat().map(x=>x[2]))];
 let stage=0,tool='plano',score=100,grave=false,done=Array(8).fill(false),penalties=new Set(),actions=new Set(),selected=null,started=false,startedAt=0,sessionReady=false;
 let cut=false,clamped=false,finalClamped=false,measureOK=false,squareOK=false,planOK=false,reinforced=false,stored=false,goggles=false,protectedBench=false,coats=0;
 const drilled=new Set(),placed=new Set(),sanded=new Set();
-let scene,camera,renderer,raycaster,pointer,dragPlane,heldRoot,heldModel=null,heldTool=null,handLift=1,lookYaw=0,lookPitch=-.15,resizeObs,dragState=null,keys=new Set(),lastFrame=0,targetGroup,targets;
+let scene,camera,renderer,raycaster,pointer,dragPlane,heldRoot,heldModel=null,heldTool=null,handLift=1,lookYaw=0,lookPitch=-.20,resizeObs,dragState=null,keys=new Set(),lastFrame=0,targetGroup,targets;
 const pieces=[],worldTools={};
 const wood=mat('#bd874f'),woodLight=mat('#d9ad72'),woodSide=mat('#916038'),metal=mat('#6c7778',.35),dark=mat('#35423c'),green=mat('#2e5944'),cloth=mat('#b5c6b5');
 function mat(color,roughness=.78){return new THREE.MeshStandardMaterial({color,roughness})}
@@ -117,14 +117,16 @@ function pick(e){setPointer(e);const hits=raycaster.intersectObjects(scene.child
 function pointOnPlane(e){setPointer(e);const p=new THREE.Vector3();return raycaster.ray.intersectPlane(dragPlane,p)?p:null}
 function setSelection(p){selected=p;for(const part of pieces){if(part.userData.core){part.userData.core.material.emissive=new THREE.Color(part===selected?'#3d2a0b':'#000000');part.userData.core.material.emissiveIntensity=part===selected?.2:0}if(part.userData.label)part.userData.label.material.color.set(part===selected?'#e8c46e':'#ffffff')}renderPieces()}
 function addToolVisual(p,kind){
- const dims=p.userData.originalDims,alongZ=dims.z>dims.x,top=dims.y/2+.025;
+ const dims=p.userData.originalDims,alongZ=dims.z>dims.x,surface=dims.y/2,top=surface+.009;
  if(!p.userData.visuals)p.userData.visuals={};
  const old=p.userData.visuals[kind];if(old){p.remove(old);old.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}})}
  const g=new THREE.Group(),yellow=mat('#f0ce72'),ink=mat('#35483b'),hole=mat('#252b28'),steel=mat('#9ca6a2');
- if(kind==='measure'){const len=(alongZ?dims.z:dims.x)*.88;box(g,alongZ?.055:len,.018,alongZ?len:.055,yellow,0,top,0);for(let i=-5;i<=5;i++){const pos=i*len/10;if(alongZ)box(g,.048,.012,.012,ink,0,top+.014,pos);else box(g,.012,.012,.048,ink,pos,top+.014,0)}}
- else if(kind==='mark'){if(alongZ)box(g,dims.x*.88,.012,.025,ink,0,top+.018,0);else box(g,.025,.012,dims.z*.88,ink,0,top+.018,0)}
- else if(kind==='square'){const lx=Math.max(.07,Math.min(.19,dims.x*.72)),lz=Math.max(.07,Math.min(.19,dims.z*.32));box(g,lx,.014,.022,yellow,-dims.x/2+lx/2,top+.012,-dims.z/2+lz/2);box(g,.022,.014,lz,yellow,-dims.x/2+lx/2,top+.012,-dims.z/2+lz/2)}
+ if(kind==='measure'){const len=(alongZ?dims.z:dims.x)*.88;box(g,alongZ?.055:len,.018,alongZ?len:.055,yellow,0,top,0);for(let i=-5;i<=5;i++){const pos=i*len/10;if(alongZ)box(g,.048,.012,.012,ink,0,top+.008,pos);else box(g,.012,.012,.048,ink,pos,top+.008,0)}}
+ else if(kind==='mark'){if(alongZ)box(g,dims.x*.88,.012,.025,ink,0,top+.004,0);else box(g,.025,.012,dims.z*.88,ink,0,top+.004,0)}
+ else if(kind==='square'){const lx=Math.max(.07,Math.min(.19,dims.x*.72)),lz=Math.max(.07,Math.min(.19,dims.z*.32));box(g,lx,.014,.022,yellow,-dims.x/2+lx/2,top+.006,-dims.z/2+lz/2);box(g,.022,.014,lz,yellow,-dims.x/2+lx/2,top+.006,-dims.z/2+lz/2)}
  else if(kind==='holes'||kind==='screws'){for(const sign of [-1,1]){const x=alongZ?0:sign*(dims.x*.22),z=alongZ?sign*(dims.z*.22):0;cylinder(g,kind==='holes'?.026:.035,kind==='holes'?.026:.035,.014,kind==='holes'?hole:steel,x,top,z)}}
+ else if(kind==='clamp'){if(alongZ){box(g,dims.x+.1,.07,.07,steel,0,surface+.01,-dims.z*.28);box(g,dims.x+.1,.07,.07,steel,0,surface+.01,dims.z*.28)}else{box(g,.07,.07,dims.z+.1,steel,-dims.x*.28,surface+.01,0);box(g,.07,.07,dims.z+.1,steel,dims.x*.28,surface+.01,0)}}
+ else if(kind==='reinforcement'){box(g,.22,.025,.05,steel,-dims.x*.25,surface+.014,-dims.z*.25);box(g,.05,.025,.22,steel,-dims.x*.25,surface+.014,-dims.z*.25)}
  p.add(g);p.userData.visuals[kind]=g;
 }
 function equipTool(id,notify=true){
@@ -159,8 +161,8 @@ else if(id==='escuadra'){squareOK=true;actions.add('escuadra');addToolVisual(sel
 else if(id==='lapiz'){if(!measureOK)penalize('mark-no-measure',2,'Marcaste sin medir primero. Medí y volvé a marcar.');else{actions.add('marca');addToolVisual(selected,'mark');feedback('Línea de corte marcada sobre '+selected.userData.title+'. La línea oscura queda visible en la superficie.','good')}}
 }
 else if(stage===2){
-if(id==='prensa'){clamped=true;actions.add('clamp');feedback('La prensa sujeta la tabla al banco. Ahora levantá la sierra.','good')}
-else if(id==='sierra'){if(!clamped)penalize('cut-unsafe',8,'Corte inseguro: usar la sierra sin sujetar la tabla anula el desafío.',true);else if(!measureOK||!actions.has('marca'))penalize('cut-unmarked',4,'Falta completar la medición y el marcado antes del corte.');else if(!cut){cut=true;actions.add('cut');selected.userData.cut=true;selected.scale.x*=.72;feedback('Corte realizado. La tabla cambió de longitud en la escena.','good')}else feedback('Esta tabla ya fue cortada.','good')}
+if(id==='prensa'){clamped=true;actions.add('clamp');addToolVisual(selected,'clamp');feedback('La prensa sujeta '+selected.userData.title+' al banco. La sujeción quedó visible; ahora levantá la sierra.','good')}
+else if(id==='sierra'){if(!clamped)penalize('cut-unsafe',8,'Corte inseguro: usar la sierra sin sujetar la tabla anula el desafío.',true);else if(!measureOK||!actions.has('marca'))penalize('cut-unmarked',4,'Falta completar la medición y el marcado antes del corte.');else if(!cut){cut=true;actions.add('cut');selected.userData.cut=true;if(selected.userData.originalDims.z>selected.userData.originalDims.x)selected.scale.z*=.72;else selected.scale.x*=.72;feedback('Corte realizado. La longitud de '+selected.userData.title+' se redujo en la escena.','good')}else feedback('Esta tabla ya fue cortada.','good')}
 }
 else if(stage===3){
 if(id==='taladro'){drilled.add(pid);actions.add('drill:'+pid);addToolVisual(selected,'holes');feedback('Pretaladro realizado en '+selected.userData.title+'. Se ven los dos orificios.','good')}
@@ -170,7 +172,7 @@ else if(id==='prensa'){clamped=true;actions.add('align');feedback('Pieza alinead
 else if(stage===4){
 if(id==='mover'){feedback('Arrastrá la pieza seleccionada hasta la guía amarilla correspondiente.')}
 else if(id==='escuadra'){squareOK=true;actions.add('assembly-square');feedback('Conjunto comprobado con escuadra.','good')}
-else if(id==='refuerzo'){reinforced=true;actions.add('reinforce');feedback('Refuerzo añadido a la unión estructural.','good')}
+else if(id==='refuerzo'){reinforced=true;actions.add('reinforce');addToolVisual(selected,'reinforcement');feedback('Refuerzo metálico añadido a la unión. Quedó visible sobre '+selected.userData.title+'.','good')}
 }
 else if(stage===5){
 const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(g===120&&!sanded.has(80)){penalize('skip80',2,'No saltees el grano 80. Lijá primero con 80.');return}if(g===220&&!sanded.has(120)){penalize('skip120',2,'Primero completá el grano 120.');return}sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});feedback('Lijado con grano '+g+' aplicado. La superficie cambió.','good')}
@@ -182,7 +184,7 @@ else if(id==='secado'){if(coats===0)feedback('Aplicá una capa de barniz antes d
 }
 else if(stage===7){
 if(id==='gafas'){goggles=true;actions.add('goggles');feedback('Protección ocular puesta.','good')}
-else if(id==='prensa'){finalClamped=true;actions.add('finalclamp');feedback('Pieza sujeta con prensa.','good')}
+else if(id==='prensa'){finalClamped=true;actions.add('finalclamp');addToolVisual(selected,'clamp');feedback('Pieza sujeta con prensa. La sujeción quedó visible.','good')}
 else if(id==='guardar'){stored=true;actions.add('stored');for(const g of Object.values(worldTools))g.visible=true;heldRoot.clear();heldTool=null;feedback('Herramientas guardadas y banco ordenado.','good')}
 }
 renderChecks();scoreUI()
