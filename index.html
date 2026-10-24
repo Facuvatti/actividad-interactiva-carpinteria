@@ -141,7 +141,7 @@ function animateToolContact(id,part,worldPoint,onContact){
  const moving=new THREE.Group();heldModel.children.forEach(child=>moving.add(child.clone(true)));moving.position.copy(startPos);moving.quaternion.copy(startQuat);moving.scale.copy(startScale);scene.add(moving);
  const targetPos=new THREE.Vector3();
  if(worldPoint)targetPos.copy(worldPoint);else if(id==='guardar')targetPos.set(0,1.49,1.55);else{part.userData.core.updateWorldMatrix(true,false);const b=new THREE.Box3().setFromObject(part.userData.core);targetPos.set((b.min.x+b.max.x)/2,b.max.y+.035,(b.min.z+b.max.z)/2)}
- if(worldPoint)targetPos.y+=.035;
+ if(worldPoint)targetPos.y+=.012;
  const dims=part.userData.originalDims,alongZ=dims.z>dims.x,targetQuat=part.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,alongZ?Math.PI/2:0,0)));
  heldModel.visible=false;actionAnimation={object:moving,startPos,startQuat,targetPos,targetQuat,axis:alongZ?'z':'x',duration:id==='sierra'?1.35:1.05,elapsed:0,contacted:false,onContact};return true
 }
@@ -152,7 +152,7 @@ function spawnDust(part){
 function splitPiece(part){
  if(part.userData.cut)return;
  const dims=part.userData.originalDims.clone(),alongZ=dims.z>dims.x,axis=alongZ?'z':'x',len=dims[axis],origin=part.position.clone(),q=part.quaternion.clone();
- part.scale[axis]*=.72;part.position.add(new THREE.Vector3(alongZ?0:-len*.14,0,alongZ?-len*.14:0).applyQuaternion(q));part.userData.cut=true;
+ part.scale[axis]*=.72;part.position.add(new THREE.Vector3(alongZ?0:-len*.14,0,alongZ?-len*.14:0).applyQuaternion(q));part.userData.cut=true;if(alongZ)box(part,dims.x*.9,dims.y*.9,.014,mat('#68452a'),0,0,dims.z/2-.005);else box(part,.014,dims.y*.9,dims.z*.9,mat('#68452a'),dims.x/2-.005,0,0);
  const od=dims.clone();od[axis]=len*.28;const off=new THREE.Group();off.userData={type:'piece',id:'offcut-'+part.userData.id,title:'Recorte de '+part.userData.title,originalDims:od.clone(),cut:true,offcut:true,visuals:{}};
  off.position.copy(origin).add(new THREE.Vector3(alongZ?0:len*.36+.045,0,alongZ?len*.36+.045:0).applyQuaternion(q));off.quaternion.copy(q);
  const core=box(off,od.x,od.y,od.z,part.userData.core.material.clone());core.userData.isCore=true;off.userData.core=core;
@@ -209,7 +209,7 @@ function captureMeasurePoint(e){
  if(!hits.length){feedback('Hacé clic directamente sobre la cara de madera, no en el borde ni en el fondo.','bad');return}
  const hit=hits[0],hitPart=rootObj(hit.object);if(!hitPart||hitPart.userData.type!=='piece')return;
  if(selected!==hitPart){setSelection(hitPart);measurePoints.length=0}
- const point=hitPart.worldToLocal(hit.point.clone());point.y=hitPart.userData.originalDims.y/2+.035;
+ const point=hitPart.worldToLocal(hit.point.clone());point.y=hitPart.userData.originalDims.y/2+.012;
  if(measurePoints.length===0){
   measurePoints.push(point.clone());
   animateToolContact('regla',hitPart,hit.point.clone(),()=>{addMeasurePoint(hitPart,point);feedback('Punto 1 marcado en '+hitPart.userData.title+'. La regla se apoyó ahí. Ahora hacé clic en el otro extremo.','good');$('hint').textContent='MEDICIÓN · punto 1 marcado · clic en el otro extremo'});
@@ -226,9 +226,9 @@ function captureMeasurePoint(e){
   box(ruler,barLength,.018,.075,yellow,0,0,0);
   const n=Math.max(1,Math.round(barLength*30));
   for(let i=0;i<=n;i++){const x=-barLength/2+barLength*i/n,major=i%10===0;box(ruler,.008,major?.012:.006,major?.058:.032,ink,x,.012,0)}
-  ruler.position.set((a.x+b.x)/2,hitPart.userData.originalDims.y/2+.06,(a.z+b.z)/2);
+  ruler.position.set((a.x+b.x)/2,hitPart.userData.originalDims.y/2+.018,(a.z+b.z)/2);
   ruler.rotation.y=-Math.atan2(b.z-a.z,b.x-a.x);marks.add(ruler);
-  const label=labelSprite(cm.toFixed(1)+' cm');label.position.copy(a).add(b).multiplyScalar(.5);label.position.y=hitPart.userData.originalDims.y/2+.2;label.scale.set(1.1,.22,1);marks.add(label);
+  const label=labelSprite(cm.toFixed(1)+' cm');label.position.copy(a).add(b).multiplyScalar(.5);label.position.y=hitPart.userData.originalDims.y/2+.14;label.scale.set(1.1,.22,1);marks.add(label);
   hitPart.add(marks);if(!hitPart.userData.measurements)hitPart.userData.measurements=[];hitPart.userData.measurements.push(marks);
   hitPart.userData.measured=true;hitPart.userData.measurementCm=cm;measureOK=true;measureMode=false;actions.add('regla');
   feedback('Medición entre los dos puntos: '+cm.toFixed(1)+' cm. La regla graduada y la línea quedaron sobre '+hitPart.userData.title+'.','good');$('hint').textContent='MEDICIÓN REGISTRADA · '+cm.toFixed(1)+' cm';renderPieces()
@@ -256,8 +256,8 @@ if(id==='prensa'){clamped=true;selected.userData.clamped=true;actions.add('clamp
 else if(id==='sierra'){if(!selected.userData.clamped)penalize('cut-unsafe-'+pid,8,'Corte inseguro: esta tabla no está sujeta con la prensa.',true);else if(!selected.userData.measured||!selected.userData.marked)penalize('cut-unmarked-'+pid,4,'Medí y marcá esta misma pieza antes de serruchar.');else if(!selected.userData.cut){cut=true;actions.add('cut');splitPiece(selected);feedback('El serrucho avanzó por la marca y separó '+selected.userData.title+' en dos piezas. El recorte quedó al costado.','good')}else feedback('Esta tabla ya fue cortada.','good')}
 }
 else if(stage===3){
-if(id==='taladro'){drilled.add(pid);actions.add('drill:'+pid);addToolVisual(selected,'holes');spawnDust(selected);feedback('El taladro giró y abrió dos orificios en '+selected.userData.title+'. Se ven los agujeros y las virutas.','good')}
-else if(id==='tornillos'){if(!drilled.has(pid))penalize('screw-no-drill-'+pid,3,'Falta pretaladrar esta pieza antes de atornillar.');else{actions.add('fixed:'+pid);addToolVisual(selected,'screws');feedback('Unión atornillada después del pretaladro. Se ven las cabezas de los tornillos.','good')}}
+if(id==='taladro'){drilled.add(pid);selected.userData.drilled=true;actions.add('drill:'+pid);addToolVisual(selected,'holes');spawnDust(selected);feedback('El taladro giró y abrió dos orificios en '+selected.userData.title+'. Se ven los agujeros y las virutas.','good')}
+else if(id==='tornillos'){if(!selected.userData.drilled)penalize('screw-no-drill-'+pid,3,'Falta pretaladrar esta pieza antes de atornillar.');else{selected.userData.fixed=true;actions.add('fixed:'+pid);addToolVisual(selected,'screws');feedback('El atornillador colocó los tornillos en '+selected.userData.title+'. Las cabezas quedaron visibles.','good')}}
 else if(id==='prensa'){clamped=true;actions.add('align');feedback('Pieza alineada y sujeta para la unión.','good')}
 }
 else if(stage===4){
@@ -266,12 +266,12 @@ else if(id==='escuadra'){squareOK=true;actions.add('assembly-square');feedback('
 else if(id==='refuerzo'){reinforced=true;actions.add('reinforce');addToolVisual(selected,'reinforcement');feedback('Refuerzo metálico añadido a la unión. Quedó visible sobre '+selected.userData.title+'.','good')}
 }
 else if(stage===5){
-const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(g===120&&!sanded.has(80)){penalize('skip80',2,'No saltees el grano 80. Lijá primero con 80.');return}if(g===220&&!sanded.has(120)){penalize('skip120',2,'Primero completá el grano 120.');return}sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});spawnDust(selected);feedback('La lija de grano '+g+' recorrió la superficie. La madera se aclaró y salió polvo de lijado.','good')}
+const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(!selected.userData.sandingStages)selected.userData.sandingStages=[];const seq=selected.userData.sandingStages;if(g===120&&!seq.includes(80)){penalize('skip80-'+pid,2,'No saltees el grano 80 en esta pieza.');return}if(g===220&&!seq.includes(120)){penalize('skip120-'+pid,2,'Primero completá el grano 120 en esta misma pieza.');return}if(!seq.includes(g))seq.push(g);sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});spawnDust(selected);feedback('La lija de grano '+g+' recorrió la superficie de '+selected.userData.title+'. La madera se aclaró y salió polvo de lijado.','good')}
 }
 else if(stage===6){
 if(id==='proteger'){protectedBench=true;actions.add('protected');if(!benchCover){benchCover=box(scene,7.2,.018,4.2,cloth,0,1.45,0);benchCover.scale.z=.02;visualAnimations.push({kind:'scale',object:benchCover,axis:'z',elapsed:0,duration:.45})}feedback('Desplegaste la manta protectora sobre el banco. La superficie quedó cubierta.','good')}
-else if(id==='barniz'){if(!protectedBench)penalize('no-protect',1,'Protegé el banco antes de aplicar barniz.');coats=Math.min(2,coats+1);selected.userData.coat=coats;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color('#a86f3e'),.13)});addToolVisual(selected,'coat');actions.add('coat'+coats);feedback('La brocha extendió la capa fina '+coats+' de 2 sobre '+selected.userData.title+'. La película húmeda quedó visible.','good')}
-else if(id==='secado'){if(coats===0)feedback('Aplicá una capa de barniz antes de iniciar el secado.','bad');else{actions.add('dry');const coat=selected.userData.visuals?.coat;if(coat)coat.traverse(m=>{if(m.material&&m.material.transparent)visualAnimations.push({kind:'opacity',object:coat,material:m.material,from:m.material.opacity,to:.12,elapsed:0,duration:.8})});feedback('El acabado quedó secando; la película húmeda se vuelve transparente.','good')}}
+else if(id==='barniz'){if(!protectedBench)penalize('no-protect',1,'Protegé el banco antes de aplicar barniz.');const layer=Math.min(2,(selected.userData.coats||0)+1);selected.userData.coats=layer;selected.userData.coat=layer;coats=Math.max(coats,layer);selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color('#a86f3e'),.13)});addToolVisual(selected,'coat'+layer);actions.add('coat'+layer);feedback('La brocha extendió la capa fina '+layer+' de 2 sobre '+selected.userData.title+'. La película húmeda quedó visible.','good')}
+else if(id==='secado'){if((selected.userData.coats||0)<2)feedback('Aplicá las dos capas de barniz sobre esta pieza antes de secarla.','bad');else{actions.add('dry');selected.userData.dried=true;for(const [key,coat] of Object.entries(selected.userData.visuals||{})){if(key.startsWith('coat'))coat.traverse(m=>{if(m.material&&m.material.transparent)visualAnimations.push({kind:'opacity',object:coat,material:m.material,from:m.material.opacity,to:.12,elapsed:0,duration:.8})})}feedback('El acabado de '+selected.userData.title+' quedó secando; la película húmeda se vuelve transparente.','good')}}
 }
 else if(stage===7){
 if(id==='gafas'){goggles=true;actions.add('goggles');$('safety').textContent='GAFAS PUESTAS';$('safety').style.color='var(--green)';feedback('Te pusiste las gafas de protección. La seguridad quedó registrada en el panel.','good')}
@@ -289,11 +289,11 @@ if(stage===0&&(!planOK||!actions.has('lista')||!actions.has('veta'))){feedback('
 if(stage===1&&(!pieces.some(p=>p.userData.measured&&p.userData.squared&&p.userData.marked))){feedback('Sobre una misma pieza: medí entre dos puntos, apoyá la escuadra y trazá la marca con el lápiz.','bad');return}
 if(stage===2&&!pieces.some(p=>p.userData.clamped)){feedback('Usá la prensa sobre la misma tabla que vas a cortar.','bad');return}
 if(stage===2&&!pieces.some(p=>p.userData.cut&&!p.userData.offcut&&p.userData.measured&&p.userData.marked&&p.userData.clamped)){feedback('Medí, marcá, sujetá y serruchá la misma pieza.','bad');return}
-if(stage===3&&(drilled.size===0||![...actions].some(a=>a.startsWith('fixed:')))){feedback('Pretaladrá una pieza y después fijala con tornillos.','bad');return}
+if(stage===3&&!pieces.some(p=>p.userData.drilled&&p.userData.fixed)){feedback('Pretaladrá una pieza y fijá esa misma pieza con tornillos.','bad');return}
 if(stage===4&&placed.size<4){feedback('Encastrá al menos cuatro piezas arrastrándolas hasta sus guías amarillas.','bad');return}
 if(stage===4&&(!actions.has('assembly-square')||!reinforced)){feedback('Comprobá el conjunto con la escuadra y añadí un refuerzo.','bad');return}
-if(stage===5&&![80,120,220].every(g=>sanded.has(g))){feedback('Completá los tres granos en orden, sobre una pieza.','bad');return}
-if(stage===6&&(coats<2||!actions.has('dry'))){feedback('Aplicá dos capas finas y usá la herramienta de secado.','bad');return}
+if(stage===5&&!pieces.some(p=>[80,120,220].every(g=>p.userData.sandingStages?.includes(g)))){feedback('Completá 80, 120 y 220 en orden sobre la misma pieza.','bad');return}
+if(stage===6&&!pieces.some(p=>(p.userData.coats||0)>=2&&p.userData.dried)){feedback('Aplicá dos capas finas y secá la misma pieza.','bad');return}
 if(stage===7&&(!goggles||!stored||!finalClamped)){feedback('Ponete las gafas, sujetá la pieza con la prensa y guardá las herramientas.','bad');return}
 done[stage]=true;feedback('Etapa verificada. El trabajo quedó registrado.','good');updateUI();$('next').disabled=false;if(stage===7){$('next').disabled=true;finishGame()}try{if(window.LessonSDK&&LessonSDK.getSession())LessonSDK.progress(done.filter(Boolean).length/8)}catch(e){console.warn('No se pudo enviar el progreso al bridge',e)}
 }
