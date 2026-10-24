@@ -22,7 +22,7 @@
 <section class="card"><div class="meta" style="margin-top:0"><span>Tiempo</span><b id="timer">00:00</b></div><div class="meta"><span>Seguridad</span><b id="safety">Sin incidentes</b></div><div class="score" id="bigScore">100 <small>/ 100</small></div></section>
 </aside>
 </div></div>
-<div class="overlay" id="intro"><div class="modal"><div class="eyebrow">Simulación de carpintería · Primera persona</div><h2>Entrá al taller y armá el estante.</h2><p>Vas a ver el banco desde la posición del carpintero. Arrastrá el fondo para mirar. Elegí una pieza desde la lista o tocándola en el banco; luego tocá una herramienta para aplicarla. También podés elegir primero la herramienta: al seleccionar una pieza se aplicará.</p><p><b>Medir y montar:</b> la regla y el lápiz dejan marcas visibles sobre la madera. Podés arrastrar las piezas en cualquier etapa; en montaje, la herramienta “Mover / encastrar” activa las guías amarillas.</p><p><b>Seguridad:</b> sujetá la madera antes de cortar, medí y marcá, pretaladrá antes de atornillar y usá protección ocular.</p><button class="btn" id="start">Entrar al taller</button></div></div>
+<div class="overlay" id="intro"><div class="modal"><div class="eyebrow">Simulación de carpintería · Primera persona</div><h2>Entrá al taller y armá el estante.</h2><p>Vas a ver el banco desde la posición del carpintero. Arrastrá el fondo para mirar. Elegí una pieza desde la lista o tocándola en el banco; luego tocá una herramienta para aplicarla. También podés elegir primero la herramienta: al seleccionar una pieza se aplicará.</p><p><b>Medir:</b> elegí Regla y hacé clic en dos puntos de la cara de arriba de la tabla. Aparecerá una línea con la distancia en centímetros. Después elegí Escuadra y Lápiz. Podés arrastrar las piezas; en montaje, “Mover / encastrar” activa las guías.</p><p><b>Seguridad:</b> sujetá la madera antes de cortar, medí y marcá, pretaladrá antes de atornillar y usá protección ocular.</p><button class="btn" id="start">Entrar al taller</button></div></div>
 <div class="overlay hidden" id="results"><div class="modal"><div class="eyebrow">Informe de fabricación</div><h2 id="resultTitle">Desafío terminado</h2><p id="resultText"></p><div class="summary" id="summary"></div><p id="reportStatus" style="font-size:11px;color:var(--muted)"></p><button class="btn" id="retry">Reintentar</button></div></div>
 <script src="https://taller.creatucurso.com.ar/sdk/lesson-sdk.js"></script>
 <script type="module">
@@ -45,7 +45,7 @@ const toolDefs=[
 const allToolIds=[...new Set(toolDefs.flat().map(x=>x[2]))];
 let stage=0,tool='plano',score=100,grave=false,done=Array(8).fill(false),penalties=new Set(),actions=new Set(),selected=null,started=false,startedAt=0,sessionReady=false;
 let cut=false,clamped=false,finalClamped=false,measureOK=false,squareOK=false,planOK=false,reinforced=false,stored=false,goggles=false,protectedBench=false,coats=0;
-const drilled=new Set(),placed=new Set(),sanded=new Set();
+const drilled=new Set(),placed=new Set(),sanded=new Set(),measurePoints=[];let measureMode=false;
 let scene,camera,renderer,raycaster,pointer,dragPlane,heldRoot,heldModel=null,heldTool=null,handLift=1,lookYaw=0,lookPitch=-.20,resizeObs,dragState=null,keys=new Set(),lastFrame=0,targetGroup,targets;
 const pieces=[],worldTools={};
 const wood=mat('#bd874f'),woodLight=mat('#d9ad72'),woodSide=mat('#916038'),metal=mat('#6c7778',.35),dark=mat('#35423c'),green=mat('#2e5944'),cloth=mat('#b5c6b5');
@@ -130,7 +130,7 @@ function addToolVisual(p,kind){
  p.add(g);p.userData.visuals[kind]=g;
 }
 function equipTool(id,notify=true){
-if(!id)return;if(heldTool&&worldTools[heldTool])worldTools[heldTool].visible=true;
+if(!id)return;if(id!=='regla'){measureMode=false;measurePoints.length=0}if(heldTool&&worldTools[heldTool])worldTools[heldTool].visible=true;
 heldRoot.clear();heldTool=id;tool=id;if(worldTools[id])worldTools[id].visible=false;
 const glove=new THREE.Group();box(glove,.18,.15,.2,mat('#d7b18c'),-.12,-.12,.035);for(let i=0;i<3;i++)box(glove,.045,.09,.12,mat('#e4c6a3'),-.18+i*.055,-.055,-.015);box(glove,.09,.07,.08,mat('#b99370'),-.07,-.12,-.045);heldRoot.add(glove);
 heldModel=new THREE.Group();heldModel.position.set(.03,.08,-.04);heldModel.scale.setScalar(.7);buildToolModel(heldModel,id);heldRoot.add(heldModel);handLift=0;
@@ -140,9 +140,25 @@ if(notify){if(selected){feedback(label+' aplicado a '+selected.userData.title+'.
 }
 function onPointerDown(e){if(!started)return;$('game').focus({preventScroll:true});const obj=pick(e);dragState={x:e.clientX,y:e.clientY,obj,mode:obj?.userData.type==='piece'?'piece':obj?'object':'look',moved:false,startYaw:lookYaw,startPitch:lookPitch};if(obj?.userData.type==='piece'){setSelection(obj);dragState.offset=pointOnPlane(e);if(dragState.offset)dragState.offset.sub(obj.position)}renderer.domElement.setPointerCapture?.(e.pointerId) }
 function onPointerMove(e){if(!dragState)return;const dx=e.clientX-dragState.x,dy=e.clientY-dragState.y;if(Math.hypot(dx,dy)>5)dragState.moved=true;if(dragState.mode==='look'&&dragState.moved){lookYaw=dragState.startYaw-dx*.0045;lookPitch=THREE.MathUtils.clamp(dragState.startPitch-dy*.0035,-.95,.12);camera.rotation.set(lookPitch,lookYaw,0)}else if(dragState.mode==='piece'&&dragState.moved&&dragState.obj){const p=pointOnPlane(e);if(p){dragState.obj.position.x=THREE.MathUtils.clamp(p.x+(dragState.offset?.x||0),-3.35,3.35);dragState.obj.position.z=THREE.MathUtils.clamp(p.z+(dragState.offset?.z||0),-1.9,1.9)}}}
-function onPointerUp(e){if(!dragState)return;const d=dragState;dragState=null;const dist=Math.hypot(e.clientX-d.x,e.clientY-d.y);if(d.mode==='object'&&d.obj&&dist<6){if(d.obj.userData.type==='tool')equipTool(d.obj.userData.toolId,true)}else if(d.mode==='piece'&&d.obj){setSelection(d.obj);if(d.moved){if(stage===4&&tool==='mover')snapPiece(d.obj);else feedback(d.obj.userData.title+' movido sobre el banco. Seleccioná una herramienta para trabajarlo.','good')}else perform(tool)}}
+function onPointerUp(e){if(!dragState)return;const d=dragState;dragState=null;const dist=Math.hypot(e.clientX-d.x,e.clientY-d.y);if(d.mode==='object'&&d.obj&&dist<6){if(d.obj.userData.type==='tool')equipTool(d.obj.userData.toolId,true)}else if(d.mode==='piece'&&d.obj){setSelection(d.obj);if(d.moved){if(stage===4&&tool==='mover')snapPiece(d.obj);else feedback(d.obj.userData.title+' movido sobre el banco. Seleccioná una herramienta para trabajarlo.','good')}else if(stage===1&&tool==='regla'&&dist<6){if(!measureMode){measureMode=true;measurePoints.length=0;feedback('Modo medir activado. Hacé clic en dos puntos de la cara superior de la tabla.','good')}captureMeasurePoint(e)}else perform(tool)}}
 function snapPiece(p){const t=targets[p.userData.id];if(!t)return;const distance=Math.hypot(p.position.x-t.x,p.position.z-t.z);if(distance<1.05){p.position.set(t.x,t.y,t.z);p.rotation.set(t.rx,0,0);p.userData.placed=true;placed.add(p.userData.id);actions.add('placed:'+p.userData.id);feedback(p.userData.title+' encastrado en su posición.','good')}else{p.position.y=t.y;feedback('La pieza no llegó a la guía. Arrastrala hasta la marca amarilla.','bad')}renderChecks()}
 function toolButtonRender(){const root=$('tools');if(!root)return;root.innerHTML='';toolDefs[stage].forEach(([ico,label,id])=>{const b=document.createElement('button');b.className='tool'+(tool===id?' active':'');b.dataset.tool=id;b.type='button';b.innerHTML='<span class="ico">'+ico+'</span><span>'+label+'</span>';b.addEventListener('click',()=>equipTool(id,true));root.appendChild(b)})}
+function captureMeasurePoint(e){
+ if(!measureMode){feedback('Elegí Regla para comenzar a medir.','bad');return}
+ setPointer(e);const hits=raycaster.intersectObjects(pieces,true);let hit=null;
+ for(const h of hits){if(h.object.isSprite)continue;const root=rootObj(h.object);if(root&&root.userData.type==='piece'){hit={piece:root,point:h.point.clone()};break}}
+ if(!hit){feedback('No detecté madera debajo del cursor. Hacé clic directamente en la cara de una tabla.','bad');return}
+ if(selected!==hit.piece){setSelection(hit.piece);measurePoints.length=0}
+ const p=selected.worldToLocal(hit.point.clone());p.y=selected.userData.originalDims.y/2+.035;
+ if(measurePoints.length===0){measurePoints.push(p);feedback('Punto 1 marcado en '+selected.userData.title+'. Ahora hacé clic en el otro extremo de la medida.','good');$('hint').textContent='MEDICIÓN: punto 1 marcado · clic en el otro extremo';return}
+ const a=measurePoints[0].clone(),b=p.clone();
+ const dx=(b.x-a.x)*selected.scale.x,dz=(b.z-a.z)*selected.scale.z;const cm=Math.sqrt(dx*dx+dz*dz)*30;
+ const g=new THREE.Group();const lineMat=new THREE.LineBasicMaterial({color:'#fff0a6',depthTest:false});const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),lineMat);line.renderOrder=5;g.add(line);
+ const sphereMat=new THREE.MeshBasicMaterial({color:'#e4b34f',depthTest:false});for(const pt of [a,b]){const s=new THREE.Mesh(new THREE.SphereGeometry(.035,12,8),sphereMat);s.position.copy(pt);s.renderOrder=6;g.add(s)}
+ const label=labelSprite(cm.toFixed(1)+' cm');label.position.copy(a).add(b).multiplyScalar(.5);label.position.y+=.17;label.scale.set(1.05,.21,1);label.renderOrder=7;g.add(label);
+ selected.add(g);if(!selected.userData.measurements)selected.userData.measurements=[];selected.userData.measurements.push(g);
+ measurePoints.length=0;measureMode=false;measureOK=true;actions.add('regla');feedback('Medición: '+cm.toFixed(1)+' cm entre los dos puntos. La línea amarilla queda guardada sobre '+selected.userData.title+'.','good');$('hint').textContent='Medida registrada: '+cm.toFixed(1)+' cm';renderPieces();
+}
 function renderPieces(){const root=$('piecePicker');if(!root)return;root.innerHTML='';pieces.forEach(p=>{const b=document.createElement('button');b.type='button';b.className='part'+(p===selected?' selected':'');b.setAttribute('aria-pressed',String(p===selected));b.innerHTML='<span>'+p.userData.title+'</span><small>'+(p.userData.placed?'Encastrada':p.userData.cut?'Cortada':'Lista para trabajar')+'</small>';b.addEventListener('click',()=>{setSelection(p);if(started)perform(tool);else feedback(p.userData.title+' seleccionada. Entrá al taller para trabajarla.','good')});root.appendChild(b)})}
 function feedback(s,t=''){const el=$('feedback');el.textContent=s;el.className='feedback '+t}
 function scoreUI(){$('scoreText').textContent=score+' / 100';$('bigScore').innerHTML=score+' <small>/ 100</small>'}
@@ -156,7 +172,7 @@ else if(id==='lista'){actions.add('lista');feedback('Lista revisada: dos lateral
 else if(id==='veta'){actions.add('veta');feedback('Veta y caras de '+selected.userData.title+' inspeccionadas.','good')}
 }
 else if(stage===1){
-if(id==='regla'){measureOK=true;actions.add('regla');addToolVisual(selected,'measure');const d=selected.userData.originalDims;feedback('Regla colocada sobre '+selected.userData.title+'. Largo nominal: '+Math.max(d.x,d.z).toFixed(2)+' unidades de escena. La escala quedó visible sobre la madera.','good')}
+if(id==='regla'){measureMode=true;measurePoints.length=0;feedback('Regla lista. Hacé clic en dos puntos de la cara superior de '+selected.userData.title+' para medir la distancia entre ellos.','good');$('hint').textContent='MEDICIÓN ACTIVA · marcá el primer extremo sobre la tabla'}
 else if(id==='escuadra'){squareOK=true;actions.add('escuadra');addToolVisual(selected,'square');feedback('Escuadra apoyada en el canto de '+selected.userData.title+'. La marca de 90° quedó visible.','good')}
 else if(id==='lapiz'){if(!measureOK)penalize('mark-no-measure',2,'Marcaste sin medir primero. Medí y volvé a marcar.');else{actions.add('marca');addToolVisual(selected,'mark');feedback('Línea de corte marcada sobre '+selected.userData.title+'. La línea oscura queda visible en la superficie.','good')}}
 }
@@ -195,7 +211,7 @@ $('stageNo').textContent='ETAPA '+(stage+1)+' DE 8';$('stageTitle').textContent=
 function verify(){
 if(grave){finishGame();return}
 if(stage===0&&(!planOK||!actions.has('lista')||!actions.has('veta'))){feedback('Usá el plano, la lista y la inspección de veta sobre una tabla antes de verificar.','bad');return}
-if(stage===1&&(!measureOK||!squareOK||!actions.has('marca'))){feedback('Medí con la regla, comprobá el ángulo y marcá la tabla después de medir.','bad');return}
+if(stage===1&&(!measureOK||!squareOK||!actions.has('marca'))){feedback('Para medir: elegí Regla y hacé clic en dos puntos sobre la misma tabla. Después usá Escuadra y Lápiz para comprobar y marcar el corte.','bad');return}
 if(stage===2&&!clamped){feedback('Levantá la prensa y sujetá la madera antes de continuar.','bad');return}
 if(stage===2&&!cut){feedback('Levantá la sierra y aplicala sobre la tabla medida, marcada y sujeta.','bad');return}
 if(stage===3&&(drilled.size===0||![...actions].some(a=>a.startsWith('fixed:')))){feedback('Pretaladrá una pieza y después fijala con tornillos.','bad');return}
