@@ -129,6 +129,8 @@ function updateVisualAnimations(dt){
  for(let i=visualAnimations.length-1;i>=0;i--){const a=visualAnimations[i],t=Math.min(1,(a.elapsed+=dt)/a.duration);
   if(a.kind==='scale')a.object.scale[a.axis]=Math.max(.015,t);
   else if(a.kind==='uniformScale')a.object.scale.setScalar(.015+.985*t);
+  else if(a.kind==='mainCut'){const e=t*t*(3-2*t);a.object.position.lerpVectors(a.fromPosition,a.toPosition,e);a.object.scale[a.axis]=a.fromScale+(a.toScale-a.fromScale)*e}
+  else if(a.kind==='splitOffcut'){const e=t*t*(3-2*t);a.object.position.lerpVectors(a.fromPosition,a.toPosition,e);a.object.scale[a.axis]=.015+.985*e}
   else if(a.kind==='opacity')a.material.opacity=a.from+(a.to-a.from)*t;
   else if(a.kind==='dust'){a.object.position.set(a.start.x+a.vx*t,a.start.y+a.vy*t,a.start.z+a.vz*t);a.object.material.opacity=1-t;a.object.scale.setScalar(1+t*1.4)}
   if(t>=1){if(a.kind==='opacity')a.material.opacity=a.to;if(a.kind==='dust'){scene.remove(a.object);a.object.geometry.dispose();a.object.material.dispose()}visualAnimations.splice(i,1)}
@@ -153,13 +155,19 @@ function spawnDust(part){
 }
 function splitPiece(part){
  if(part.userData.cut)return;
- const dims=part.userData.originalDims.clone(),alongZ=dims.z>dims.x,axis=alongZ?'z':'x',len=dims[axis],origin=part.position.clone(),q=part.quaternion.clone();
- part.scale[axis]*=.72;part.position.add(new THREE.Vector3(alongZ?0:-len*.14,0,alongZ?-len*.14:0).applyQuaternion(q));part.userData.cut=true;if(alongZ)box(part,dims.x*.9,dims.y*.9,.014,mat('#68452a'),0,0,dims.z/2-.005);else box(part,.014,dims.y*.9,dims.z*.9,mat('#68452a'),dims.x/2-.005,0,0);
+ const dims=part.userData.originalDims.clone(),alongZ=dims.z>dims.x,axis=alongZ?'z':'x',len=dims[axis],origin=part.position.clone(),q=part.quaternion.clone(),startScale=part.scale[axis];
+ const endPos=origin.clone().add(new THREE.Vector3(alongZ?0:-len*.14,0,alongZ?-len*.14:0).applyQuaternion(q));
+ part.userData.cut=true;
+ if(alongZ)box(part,dims.x*.9,dims.y*.9,.014,mat('#68452a'),0,0,dims.z/2-.005);else box(part,.014,dims.y*.9,dims.z*.9,mat('#68452a'),dims.x/2-.005,0,0);
+ visualAnimations.push({kind:'mainCut',object:part,axis,fromPosition:origin.clone(),toPosition:endPos,fromScale:startScale,toScale:startScale*.72,elapsed:0,duration:.48});
  const od=dims.clone();od[axis]=len*.28;const off=new THREE.Group();off.userData={type:'piece',id:'offcut-'+part.userData.id,title:'Recorte de '+part.userData.title,originalDims:od.clone(),cut:true,offcut:true,visuals:{}};
- off.position.copy(origin).add(new THREE.Vector3(alongZ?0:len*.36+.045,0,alongZ?len*.36+.045:0).applyQuaternion(q));off.quaternion.copy(q);
+ const offEnd=origin.clone().add(new THREE.Vector3(alongZ?0:len*.36+.045,0,alongZ?len*.36+.045:0).applyQuaternion(q));
+ off.position.copy(origin);off.scale[axis]=.015;off.quaternion.copy(q);
  const core=box(off,od.x,od.y,od.z,part.userData.core.material.clone());core.userData.isCore=true;off.userData.core=core;
  if(alongZ)box(off,od.x,od.y*.84,.012,mat('#68452a'),0,0,-od.z/2+.006);else box(off,.012,od.y*.84,od.z,mat('#68452a'),-od.x/2+.006,0,0);
- const label=labelSprite('RECORTE');label.position.set(0,od.y/2+.12,0);label.scale.set(.75,.14,1);off.add(label);off.userData.label=label;scene.add(off);pieces.push(off);part.userData.offcut=off;renderPieces()
+ const label=labelSprite('RECORTE');label.position.set(0,od.y/2+.12,0);label.scale.set(.75,.14,1);off.add(label);off.userData.label=label;scene.add(off);pieces.push(off);
+ visualAnimations.push({kind:'splitOffcut',object:off,axis,fromPosition:origin.clone(),toPosition:offEnd,elapsed:0,duration:.52});
+ part.userData.offcut=off;renderPieces()
 }
 function movePlayer(dt){if(!started||!camera||actionAnimation)return;const speed=2.5*dt;let f=0,s=0;if(keys.has('w'))f+=1;if(keys.has('s'))f-=1;if(keys.has('d'))s+=1;if(keys.has('a'))s-=1;if(!f&&!s)return;const fx=-Math.sin(lookYaw),fz=-Math.cos(lookYaw),rx=Math.cos(lookYaw),rz=-Math.sin(lookYaw);camera.position.x+=(fx*f+rx*s)*speed;camera.position.z+=(fz*f+rz*s)*speed;camera.position.x=THREE.MathUtils.clamp(camera.position.x,-4.7,4.7);camera.position.z=THREE.MathUtils.clamp(camera.position.z,3.4,8.2)}
 function setPointer(e){const r=renderer.domElement.getBoundingClientRect();pointer.x=((e.clientX-r.left)/r.width)*2-1;pointer.y=-((e.clientY-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera)}
