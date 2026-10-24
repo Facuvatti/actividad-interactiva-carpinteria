@@ -196,21 +196,41 @@ function onPointerMove(e){if(!dragState)return;const dx=e.clientX-dragState.x,dy
 function onPointerUp(e){if(!dragState)return;const d=dragState;dragState=null;const dist=Math.hypot(e.clientX-d.x,e.clientY-d.y);if(d.mode==='object'&&d.obj&&dist<6){if(d.obj.userData.type==='tool')equipTool(d.obj.userData.toolId,true)}else if(d.mode==='piece'&&d.obj){setSelection(d.obj);if(d.moved){if(stage===4&&tool==='mover')snapPiece(d.obj);else feedback(d.obj.userData.title+' movido sobre el banco. Seleccioná una herramienta para trabajarlo.','good')}else if(stage===1&&tool==='regla'&&dist<6){if(!measureMode){measureMode=true;measurePoints.length=0;feedback('Modo medir activado. Hacé clic en dos puntos de la cara superior de la tabla.','good')}captureMeasurePoint(e)}else perform(tool)}}
 function snapPiece(p){const t=targets[p.userData.id];if(!t)return;const distance=Math.hypot(p.position.x-t.x,p.position.z-t.z);if(distance<1.05){p.position.set(t.x,t.y,t.z);p.rotation.set(t.rx,0,0);p.userData.placed=true;placed.add(p.userData.id);actions.add('placed:'+p.userData.id);feedback(p.userData.title+' encastrado en su posición.','good')}else{p.position.y=t.y;feedback('La pieza no llegó a la guía. Arrastrala hasta la marca amarilla.','bad')}renderChecks()}
 function toolButtonRender(){const root=$('tools');if(!root)return;root.innerHTML='';toolDefs[stage].forEach(([ico,label,id])=>{const b=document.createElement('button');b.className='tool'+(tool===id?' active':'');b.dataset.tool=id;b.type='button';b.innerHTML='<span class="ico">'+ico+'</span><span>'+label+'</span>';b.addEventListener('click',()=>equipTool(id,true));root.appendChild(b)})}
+function addMeasurePoint(part,p){
+ const marker=new THREE.Mesh(new THREE.SphereGeometry(.032,12,8),new THREE.MeshBasicMaterial({color:'#e5ad46',depthTest:false}));
+ marker.position.copy(p);marker.renderOrder=8;part.add(marker);return marker
+}
 function captureMeasurePoint(e){
- if(!measureMode){feedback('Elegí Regla para comenzar a medir.','bad');return}
- setPointer(e);const hits=raycaster.intersectObjects(pieces,true);let hit=null;
- for(const h of hits){if(h.object.isSprite)continue;const root=rootObj(h.object);if(root&&root.userData.type==='piece'){hit={piece:root,point:h.point.clone()};break}}
- if(!hit){feedback('No detecté madera debajo del cursor. Hacé clic directamente en la cara de una tabla.','bad');return}
- if(selected!==hit.piece){setSelection(hit.piece);measurePoints.length=0}
- const p=selected.worldToLocal(hit.point.clone());p.y=selected.userData.originalDims.y/2+.035;
- if(measurePoints.length===0){measurePoints.push(p);feedback('Punto 1 marcado en '+selected.userData.title+'. Ahora hacé clic en el otro extremo de la medida.','good');$('hint').textContent='MEDICIÓN: punto 1 marcado · clic en el otro extremo';return}
- const a=measurePoints[0].clone(),b=p.clone();
- const dx=(b.x-a.x)*selected.scale.x,dz=(b.z-a.z)*selected.scale.z;const cm=Math.sqrt(dx*dx+dz*dz)*30;
- const g=new THREE.Group();const lineMat=new THREE.LineBasicMaterial({color:'#fff0a6',depthTest:false});const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),lineMat);line.renderOrder=5;g.add(line);
- const sphereMat=new THREE.MeshBasicMaterial({color:'#e4b34f',depthTest:false});for(const pt of [a,b]){const s=new THREE.Mesh(new THREE.SphereGeometry(.035,12,8),sphereMat);s.position.copy(pt);s.renderOrder=6;g.add(s)}
- const label=labelSprite(cm.toFixed(1)+' cm');label.position.copy(a).add(b).multiplyScalar(.5);label.position.y+=.17;label.scale.set(1.05,.21,1);label.renderOrder=7;g.add(label);
- selected.add(g);if(!selected.userData.measurements)selected.userData.measurements=[];selected.userData.measurements.push(g);
- measurePoints.length=0;measureMode=false;measureOK=true;actions.add('regla');feedback('Medición: '+cm.toFixed(1)+' cm entre los dos puntos. La línea amarilla queda guardada sobre '+selected.userData.title+'.','good');$('hint').textContent='Medida registrada: '+cm.toFixed(1)+' cm';renderPieces();
+ if(!measureMode||actionAnimation)return;
+ setPointer(e);
+ const cores=pieces.map(p=>p.userData.core).filter(Boolean),hits=raycaster.intersectObjects(cores,false);
+ if(!hits.length){feedback('Hacé clic directamente sobre la cara de madera, no en el borde ni en el fondo.','bad');return}
+ const hit=hits[0],hitPart=rootObj(hit.object);if(!hitPart||hitPart.userData.type!=='piece')return;
+ if(selected!==hitPart){setSelection(hitPart);measurePoints.length=0}
+ const point=hitPart.worldToLocal(hit.point.clone());point.y=hitPart.userData.originalDims.y/2+.035;
+ if(measurePoints.length===0){
+  measurePoints.push(point.clone());
+  animateToolContact('regla',hitPart,hit.point.clone(),()=>{addMeasurePoint(hitPart,point);feedback('Punto 1 marcado en '+hitPart.userData.title+'. La regla se apoyó ahí. Ahora hacé clic en el otro extremo.','good');$('hint').textContent='MEDICIÓN · punto 1 marcado · clic en el otro extremo'});
+  return
+ }
+ const a=measurePoints[0].clone(),b=point.clone(),scale=hitPart.scale;
+ const dx=(b.x-a.x)*scale.x,dz=(b.z-a.z)*scale.z,length=Math.sqrt(dx*dx+dz*dz),cm=length*30;
+ measurePoints.length=0;
+ animateToolContact('regla',hitPart,hit.point.clone(),()=>{
+  const marks=new THREE.Group();
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),new THREE.LineBasicMaterial({color:'#fff0a6',depthTest:false}));line.renderOrder=10;marks.add(line);
+  addMeasurePoint(hitPart,a);addMeasurePoint(hitPart,b);
+  const ruler=new THREE.Group(),yellow=mat('#edc35e'),ink=mat('#36453a'),barLength=Math.max(length,.035);
+  box(ruler,barLength,.018,.075,yellow,0,0,0);
+  const n=Math.max(1,Math.round(barLength*30));
+  for(let i=0;i<=n;i++){const x=-barLength/2+barLength*i/n,major=i%10===0;box(ruler,.008,major?.012:.006,major?.058:.032,ink,x,.012,0)}
+  ruler.position.set((a.x+b.x)/2,hitPart.userData.originalDims.y/2+.06,(a.z+b.z)/2);
+  ruler.rotation.y=-Math.atan2(b.z-a.z,b.x-a.x);marks.add(ruler);
+  const label=labelSprite(cm.toFixed(1)+' cm');label.position.copy(a).add(b).multiplyScalar(.5);label.position.y=hitPart.userData.originalDims.y/2+.2;label.scale.set(1.1,.22,1);marks.add(label);
+  hitPart.add(marks);if(!hitPart.userData.measurements)hitPart.userData.measurements=[];hitPart.userData.measurements.push(marks);
+  hitPart.userData.measured=true;hitPart.userData.measurementCm=cm;measureOK=true;measureMode=false;actions.add('regla');
+  feedback('Medición entre los dos puntos: '+cm.toFixed(1)+' cm. La regla graduada y la línea quedaron sobre '+hitPart.userData.title+'.','good');$('hint').textContent='MEDICIÓN REGISTRADA · '+cm.toFixed(1)+' cm';renderPieces()
+ });
 }
 function renderPieces(){const root=$('piecePicker');if(!root)return;root.innerHTML='';pieces.forEach(p=>{const b=document.createElement('button');b.type='button';b.className='part'+(p===selected?' selected':'');b.setAttribute('aria-pressed',String(p===selected));b.innerHTML='<span>'+p.userData.title+'</span><small>'+(p.userData.placed?'Encastrada':p.userData.cut?'Cortada':'Lista para trabajar')+'</small>';b.addEventListener('click',()=>{setSelection(p);if(started)perform(tool);else feedback(p.userData.title+' seleccionada. Entrá al taller para trabajarla.','good')});root.appendChild(b)})}
 function feedback(s,t=''){const el=$('feedback');el.textContent=s;el.className='feedback '+t}
