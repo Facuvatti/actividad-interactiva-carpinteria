@@ -49,7 +49,8 @@ const toolsByStage=[
 [['Gafas','gafas'],['Prensa','prensa'],['Guardar herramientas','guardar']]
 ];
 const maxPts=[9,14,9,14,17,9,11,17];
-let stage=0,tool='plano',score=100,penalties=new Set(),stageDone=Array(8).fill(false),actions=new Set(),safetyFailure=false,started=false,startAt=0,elapsed=0,drag=null,hover=null,reportDone=false,sessionReady=false;\nwindow.addEventListener('lesson:session',()=>{sessionReady=true});
+let stage=0,tool='plano',score=100,penalties=new Set(),stageDone=Array(8).fill(false),actions=new Set(),safetyFailure=false,started=false,startAt=0,elapsed=0,drag=null,hover=null,reportDone=false,sessionReady=false;
+window.addEventListener('lesson:session',()=>{sessionReady=true});
 const pieces=[
 {id:'sideL',name:'Lateral izquierdo',x:140,y:165,w:70,h:240,stage:0,qty:1,face:'oculta',grain:true,cut:false,placed:false},
 {id:'sideR',name:'Lateral derecho',x:230,y:165,w:70,h:240,stage:0,qty:1,face:'oculta',grain:true,cut:false,placed:false},
@@ -102,7 +103,8 @@ function renderTools(){const root=$('tools');root.innerHTML='';toolsByStage[stag
 function updateUI(){$('stageNum').textContent='ETAPA '+(stage+1)+' DE 8';$('stageTitle').textContent=stageNames[stage];$('stageDesc').textContent=stageDescs[stage];$('phasePill').textContent=['PLANO','MEDICIÓN','CORTES','ENSAMBLES','MONTAJE','LIJADO','ACABADO','SEGURIDAD'][stage];$('sceneTitle').textContent='Banco de trabajo · '+stageNames[stage];$('progress').style.width=(stageDone.filter(Boolean).length/8*100)+'%';$('progressText').textContent=stageDone.filter(Boolean).length+' / 8 etapas';$('checkBtn').textContent=stage===7?'Terminar y evaluar':'Verificar etapa';$('nextBtn').disabled=!stageDone[stage]||stage===7;renderTools();renderChecks();draw()}
 function renderChecks(){const root=$('checks');root.innerHTML='';const names=['Plano inspeccionado','Medición verificada','Cortes planificados','Ensambles elegidos','Montaje comprobado','Lijado progresivo','Acabado aplicado','Seguridad controlada'];names.forEach((n,i)=>{const d=document.createElement('div');d.className='check';d.innerHTML='<span class="dot">'+(stageDone[i]?'✓':'')+'</span><span>'+n+'</span>';root.appendChild(d)})}
 function pointer(e){const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*900/r.width,y:(e.clientY-r.top)*900/r.width}}
-function worldPoint(p){const y=p.y/.56;return {x:p.x-y*.28,y}}\nfunction hit(p){const q=worldPoint(p);return [...boards].reverse().find(b=>q.x>=b.x&&q.x<=b.x+b.w&&q.y>=b.y&&q.y<=b.y+b.h)}
+function worldPoint(p){const y=p.y/.56;return {x:p.x-y*.28,y}}
+function hit(p){const q=worldPoint(p);return [...boards].reverse().find(b=>q.x>=b.x&&q.x<=b.x+b.w&&q.y>=b.y&&q.y<=b.y+b.h)}
 canvas.addEventListener('pointerdown',e=>{if(!started)return;const p=pointer(e),b=hit(p);if(b){const q=worldPoint(p);drag={id:b.id,dx:q.x-b.x,dy:q.y-b.y};canvas.setPointerCapture(e.pointerId);hover=b.id;draw();return}const idx=Math.floor((p.x-35)/140);if(p.y>=520&&p.y<=550&&idx>=0&&idx<toolsByStage[stage].length){tool=toolsByStage[stage][idx][1];renderTools();draw()}});
 canvas.addEventListener('pointermove',e=>{if(!started)return;const p=pointer(e);if(drag){const b=boards.find(x=>x.id===drag.id),q=worldPoint(p);if(b){b.x=Math.max(25,Math.min(810-b.w,q.x-drag.dx));b.y=Math.max(150,Math.min(410-b.h,q.y-drag.dy));}draw();return}const b=hit(p);hover=b?b.id:null;canvas.style.cursor=b?'grab':'crosshair';});
 canvas.addEventListener('pointerup',()=>{if(drag){const b=boards.find(x=>x.id===drag.id);if(b){actions.add('drag');if(stage===0){actions.add('inspect:'+b.id);setFeedback('Inspeccionaste '+b.name+'. Revisá cantidad, cota, veta y cara visible.','good')}if(stage===4&&b.x>570){b.placed=true;joined.add(b.id);setFeedback(b.name+' ubicada en la zona de montaje. Verificá el encastre.','good')}}drag=null;draw();renderChecks()}});
