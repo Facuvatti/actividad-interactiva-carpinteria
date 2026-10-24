@@ -35,7 +35,7 @@ const stageDesc=['Inspeccioná las tablas y comprobá sus caras y la veta.','Med
 const toolDefs=[
 [['▤','Plano','plano'],['☷','Lista de piezas','lista'],['⌁','Inspeccionar veta','veta']],
 [['📏','Regla','regla'],['⊥','Escuadra','escuadra'],['✎','Lápiz','lapiz']],
-[['⊞','Prensa','prensa'],['⚒','Sierra','sierra']],
+[['⊞','Prensa','prensa'],['⚒','Serrucho','sierra']],
 [['⦿','Taladro','taladro'],['⌁','Tornillos','tornillos'],['⊞','Prensa','prensa']],
 [['↔','Mover / encastrar','mover'],['⊥','Escuadra','escuadra'],['✚','Refuerzo','refuerzo']],
 [['80','Lija grano 80','lija80'],['120','Lija grano 120','lija120'],['220','Lija grano 220','lija220']],
@@ -45,7 +45,7 @@ const toolDefs=[
 const allToolIds=[...new Set(toolDefs.flat().map(x=>x[2]))];
 let stage=0,tool='plano',score=100,grave=false,done=Array(8).fill(false),penalties=new Set(),actions=new Set(),selected=null,started=false,startedAt=0,sessionReady=false;
 let cut=false,clamped=false,finalClamped=false,measureOK=false,squareOK=false,planOK=false,reinforced=false,stored=false,goggles=false,protectedBench=false,coats=0;
-const drilled=new Set(),placed=new Set(),sanded=new Set(),measurePoints=[];let measureMode=false;
+const drilled=new Set(),placed=new Set(),sanded=new Set(),measurePoints=[];let measureMode=false,actionAnimation=null,visualAnimations=[],benchCover=null;
 let scene,camera,renderer,raycaster,pointer,dragPlane,heldRoot,heldModel=null,heldTool=null,handLift=1,lookYaw=0,lookPitch=-.20,resizeObs,dragState=null,keys=new Set(),lastFrame=0,targetGroup,targets;
 const pieces=[],worldTools={};
 const wood=mat('#bd874f'),woodLight=mat('#d9ad72'),woodSide=mat('#916038'),metal=mat('#6c7778',.35),dark=mat('#35423c'),green=mat('#2e5944'),cloth=mat('#b5c6b5');
@@ -109,18 +109,66 @@ resizeObs=new ResizeObserver(resize);resizeObs.observe($('game').parentElement);
 renderer.domElement.addEventListener('pointerdown',onPointerDown);renderer.domElement.addEventListener('pointermove',onPointerMove);renderer.domElement.addEventListener('pointerup',onPointerUp);renderer.domElement.addEventListener('pointercancel',onPointerUp);
 }
 function resize(){if(!renderer||!camera)return;const el=$('game'),w=el.clientWidth||800,h=el.clientHeight||500;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
-function animate(now){requestAnimationFrame(animate);const dt=Math.min(((now||performance.now())-lastFrame)/1000,.04);lastFrame=now||performance.now();movePlayer(dt);if(heldRoot){handLift=Math.min(1,handLift+dt*7);const e=1-Math.pow(1-handLift,3);heldRoot.position.y=-.65+.33*e}if(renderer&&scene&&camera)renderer.render(scene,camera)}
+function animate(now){
+ requestAnimationFrame(animate);
+ const dt=Math.min(((now||performance.now())-lastFrame)/1000,.04);lastFrame=now||performance.now();
+ movePlayer(dt);
+ if(heldRoot){handLift=Math.min(1,handLift+dt*7);const e=1-Math.pow(1-handLift,3);heldRoot.position.y=-.65+.33*e}
+ updateActionAnimation(dt);updateVisualAnimations(dt);
+ if(renderer&&scene&&camera)renderer.render(scene,camera)
+}
+function updateActionAnimation(dt){
+ const a=actionAnimation;if(!a)return;
+ a.elapsed+=dt;const t=Math.min(1,a.elapsed/a.duration),smooth=x=>x*x*(3-2*x);
+ if(t<.36){const u=smooth(t/.36);a.object.position.lerpVectors(a.startPos,a.targetPos,u);a.object.quaternion.slerpQuaternions(a.startQuat,a.targetQuat,u)}
+ else if(t<.72){const u=(t-.36)/.36;a.object.position.copy(a.targetPos);if(a.axis==='z')a.object.position.z+=Math.sin(u*Math.PI*4)*.035;else a.object.position.x+=Math.sin(u*Math.PI*4)*.035;a.object.position.y+=Math.abs(Math.sin(u*Math.PI*4))*.012;a.object.quaternion.copy(a.targetQuat).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,Math.sin(u*Math.PI*4)*.035)));if(!a.contacted&&u>=.22){a.contacted=true;try{a.onContact?.()}catch(e){console.error('Error durante la acción de herramienta',e)}}}
+ else{const u=smooth((t-.72)/.28);a.object.position.lerpVectors(a.targetPos,a.startPos,u);a.object.quaternion.slerpQuaternions(a.targetQuat,a.startQuat,u)}
+ if(t>=1){scene.remove(a.object);if(heldModel)heldModel.visible=true;actionAnimation=null}
+}
+function updateVisualAnimations(dt){
+ for(let i=visualAnimations.length-1;i>=0;i--){const a=visualAnimations[i],t=Math.min(1,(a.elapsed+=dt)/a.duration);
+  if(a.kind==='scale')a.object.scale[a.axis]=Math.max(.015,t);
+  else if(a.kind==='opacity')a.material.opacity=a.from+(a.to-a.from)*t;
+  else if(a.kind==='dust'){a.object.position.set(a.start.x+a.vx*t,a.start.y+a.vy*t,a.start.z+a.vz*t);a.object.material.opacity=1-t;a.object.scale.setScalar(1+t*1.4)}
+  if(t>=1){if(a.kind==='opacity')a.material.opacity=a.to;if(a.kind==='dust'){scene.remove(a.object);a.object.geometry.dispose();a.object.material.dispose()}visualAnimations.splice(i,1)}
+ }
+}
+function animateToolContact(id,part,worldPoint,onContact){
+ if(actionAnimation||!part||!heldModel||!scene)return false;
+ camera.updateMatrixWorld(true);heldRoot.updateMatrixWorld(true);heldModel.updateWorldMatrix(true,false);
+ const startPos=heldModel.getWorldPosition(new THREE.Vector3()),startQuat=heldModel.getWorldQuaternion(new THREE.Quaternion()),startScale=heldModel.getWorldScale(new THREE.Vector3());
+ const moving=new THREE.Group();heldModel.children.forEach(child=>moving.add(child.clone(true)));moving.position.copy(startPos);moving.quaternion.copy(startQuat);moving.scale.copy(startScale);scene.add(moving);
+ const targetPos=new THREE.Vector3();
+ if(worldPoint)targetPos.copy(worldPoint);else if(id==='guardar')targetPos.set(0,1.49,1.55);else{part.userData.core.updateWorldMatrix(true,false);const b=new THREE.Box3().setFromObject(part.userData.core);targetPos.set((b.min.x+b.max.x)/2,b.max.y+.035,(b.min.z+b.max.z)/2)}
+ if(worldPoint)targetPos.y+=.035;
+ const dims=part.userData.originalDims,alongZ=dims.z>dims.x,targetQuat=part.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,alongZ?Math.PI/2:0,0)));
+ heldModel.visible=false;actionAnimation={object:moving,startPos,startQuat,targetPos,targetQuat,axis:alongZ?'z':'x',duration:id==='sierra'?1.35:1.05,elapsed:0,contacted:false,onContact};return true
+}
+function spawnDust(part){
+ part.userData.core.updateWorldMatrix(true,false);const c=part.userData.core.getWorldPosition(new THREE.Vector3()),colors=['#c8a16a','#e0c99a','#9b764b'];
+ for(let i=0;i<9;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(.018+Math.random()*.018,6,5),new THREE.MeshBasicMaterial({color:colors[i%colors.length],transparent:true,opacity:1}));m.position.set(c.x+(Math.random()-.5)*.35,c.y+.07,c.z+(Math.random()-.5)*.25);scene.add(m);visualAnimations.push({kind:'dust',object:m,elapsed:0,duration:.48+Math.random()*.35,start:m.position.clone(),vx:(Math.random()-.5)*.5,vy:.18+Math.random()*.25,vz:(Math.random()-.5)*.5})}
+}
+function splitPiece(part){
+ if(part.userData.cut)return;
+ const dims=part.userData.originalDims.clone(),alongZ=dims.z>dims.x,axis=alongZ?'z':'x',len=dims[axis],origin=part.position.clone(),q=part.quaternion.clone();
+ part.scale[axis]*=.72;part.position.add(new THREE.Vector3(alongZ?0:-len*.14,0,alongZ?-len*.14:0).applyQuaternion(q));part.userData.cut=true;
+ const od=dims.clone();od[axis]=len*.28;const off=new THREE.Group();off.userData={type:'piece',id:'offcut-'+part.userData.id,title:'Recorte de '+part.userData.title,originalDims:od.clone(),cut:true,offcut:true,visuals:{}};
+ off.position.copy(origin).add(new THREE.Vector3(alongZ?0:len*.36+.045,0,alongZ?len*.36+.045:0).applyQuaternion(q));off.quaternion.copy(q);
+ const core=box(off,od.x,od.y,od.z,part.userData.core.material.clone());core.userData.isCore=true;off.userData.core=core;
+ if(alongZ)box(off,od.x,od.y*.84,.012,mat('#68452a'),0,0,-od.z/2+.006);else box(off,.012,od.y*.84,od.z,mat('#68452a'),-od.x/2+.006,0,0);
+ const label=labelSprite('RECORTE');label.position.set(0,od.y/2+.12,0);label.scale.set(.75,.14,1);off.add(label);off.userData.label=label;scene.add(off);pieces.push(off);part.userData.offcut=off;renderPieces()
+}
 function movePlayer(dt){if(!started||!camera)return;const speed=2.5*dt;let f=0,s=0;if(keys.has('w'))f+=1;if(keys.has('s'))f-=1;if(keys.has('d'))s+=1;if(keys.has('a'))s-=1;if(!f&&!s)return;const fx=-Math.sin(lookYaw),fz=-Math.cos(lookYaw),rx=Math.cos(lookYaw),rz=-Math.sin(lookYaw);camera.position.x+=(fx*f+rx*s)*speed;camera.position.z+=(fz*f+rz*s)*speed;camera.position.x=THREE.MathUtils.clamp(camera.position.x,-4.7,4.7);camera.position.z=THREE.MathUtils.clamp(camera.position.z,3.4,8.2)}
 function setPointer(e){const r=renderer.domElement.getBoundingClientRect();pointer.x=((e.clientX-r.left)/r.width)*2-1;pointer.y=-((e.clientY-r.top)/r.height)*2+1;raycaster.setFromCamera(pointer,camera)}
 function rootObj(o){let p=o;while(p&&p!==scene){if(p===heldRoot)return null;if(p.userData&&p.userData.type)return p;p=p.parent}return null}
 function pick(e){setPointer(e);const hits=raycaster.intersectObjects(scene.children,true);for(const h of hits){const root=rootObj(h.object);if(root)return root}return null}
-function pickPieceOnly(e){setPointer(e);const hits=raycaster.intersectObjects(pieces,true);for(const h of hits){if(h.object.isSprite)continue;const root=rootObj(h.object);if(root&&root.userData.type==='piece')return root}return null}
+function pickPieceOnly(e){setPointer(e);const hits=raycaster.intersectObjects(pieces.map(p=>p.userData.core).filter(Boolean),false);for(const h of hits){const root=rootObj(h.object);if(root&&root.userData.type==='piece')return root}return null}
 function pointOnPlane(e){setPointer(e);const p=new THREE.Vector3();return raycaster.ray.intersectPlane(dragPlane,p)?p:null}
 function setSelection(p){selected=p;for(const part of pieces){if(part.userData.core){part.userData.core.material.emissive=new THREE.Color(part===selected?'#3d2a0b':'#000000');part.userData.core.material.emissiveIntensity=part===selected?.2:0}if(part.userData.label)part.userData.label.material.color.set(part===selected?'#e8c46e':'#ffffff')}renderPieces()}
 function addToolVisual(p,kind){
  const dims=p.userData.originalDims,alongZ=dims.z>dims.x,surface=dims.y/2,top=surface+.009;
  if(!p.userData.visuals)p.userData.visuals={};
- const old=p.userData.visuals[kind];if(old){p.remove(old);old.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}})}
+ const old=p.userData.visuals[kind];if(old){visualAnimations=visualAnimations.filter(a=>a.object!==old);p.remove(old);old.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}})}
  const g=new THREE.Group(),yellow=mat('#f0ce72'),ink=mat('#35483b'),hole=mat('#252b28'),steel=mat('#9ca6a2');
  if(kind==='measure'){const len=(alongZ?dims.z:dims.x)*.88;box(g,alongZ?.055:len,.018,alongZ?len:.055,yellow,0,top,0);for(let i=-5;i<=5;i++){const pos=i*len/10;if(alongZ)box(g,.048,.012,.012,ink,0,top+.008,pos);else box(g,.012,.012,.048,ink,pos,top+.008,0)}}
  else if(kind==='mark'){if(alongZ)box(g,dims.x*.88,.012,.025,ink,0,top+.004,0);else box(g,.025,.012,dims.z*.88,ink,0,top+.004,0)}
@@ -128,10 +176,14 @@ function addToolVisual(p,kind){
  else if(kind==='holes'||kind==='screws'){for(const sign of [-1,1]){const x=alongZ?0:sign*(dims.x*.22),z=alongZ?sign*(dims.z*.22):0;cylinder(g,kind==='holes'?.026:.035,kind==='holes'?.026:.035,.014,kind==='holes'?hole:steel,x,top,z)}}
  else if(kind==='clamp'){if(alongZ){box(g,dims.x+.1,.07,.07,steel,0,surface+.01,-dims.z*.28);box(g,dims.x+.1,.07,.07,steel,0,surface+.01,dims.z*.28)}else{box(g,.07,.07,dims.z+.1,steel,-dims.x*.28,surface+.01,0);box(g,.07,.07,dims.z+.1,steel,dims.x*.28,surface+.01,0)}}
  else if(kind==='reinforcement'){box(g,.22,.025,.05,steel,-dims.x*.25,surface+.014,-dims.z*.25);box(g,.05,.025,.22,steel,-dims.x*.25,surface+.014,-dims.z*.25)}
+ else if(kind==='coat'){const wet=new THREE.Mesh(new THREE.BoxGeometry(dims.x*.92,.01,dims.z*.92),new THREE.MeshStandardMaterial({color:'#d4a15e',roughness:.25,transparent:true,opacity:.55,depthWrite:false}));wet.position.y=top;g.add(wet)}
+ else if(kind==='plan'||kind==='list'){box(g,Math.min(.48,dims.x*.7),.015,Math.min(.32,dims.z*.7),mat('#f5edcf'),0,top+.025,0);for(let i=0;i<3;i++)box(g,Math.min(.32,dims.x*.48),.008,.01,kind==='plan'?mat('#587a5b'):mat('#887a5d'),0,top+.04,-.07+i*.045)}
+ else if(kind==='grain'){for(let i=-2;i<=2;i++){if(alongZ)box(g,.012,.006,dims.z*.68,mat('#e7c181'),i*dims.x*.12,top+.015,0);else box(g,dims.x*.68,.006,.012,mat('#e7c181'),0,top+.015,i*dims.z*.12)}}
+ if(kind==='mark'||kind==='coat'){const axis=alongZ?'z':'x';g.scale[axis]=.015;visualAnimations.push({kind:'scale',object:g,axis,elapsed:0,duration:kind==='mark'?.55:.85})}
  p.add(g);p.userData.visuals[kind]=g;
 }
 function equipTool(id,notify=true){
-if(!id)return;if(id!=='regla'){measureMode=false;measurePoints.length=0}if(heldTool&&worldTools[heldTool])worldTools[heldTool].visible=true;
+if(!id||actionAnimation)return;if(id!=='regla'){measureMode=false;measurePoints.length=0}if(heldTool&&worldTools[heldTool])worldTools[heldTool].visible=true;
 heldRoot.clear();heldTool=id;tool=id;if(worldTools[id])worldTools[id].visible=false;
 const glove=new THREE.Group();box(glove,.18,.15,.2,mat('#d7b18c'),-.12,-.12,.035);for(let i=0;i<3;i++)box(glove,.045,.09,.12,mat('#e4c6a3'),-.18+i*.055,-.055,-.015);box(glove,.09,.07,.08,mat('#b99370'),-.07,-.12,-.045);heldRoot.add(glove);
 heldModel=new THREE.Group();heldModel.position.set(.03,.08,-.04);heldModel.scale.setScalar(.7);buildToolModel(heldModel,id);heldRoot.add(heldModel);handLift=0;
@@ -139,7 +191,7 @@ toolButtonRender();
 const label=toolDefs.flat().find(x=>x[2]===id)?.[1]||id;
 if(notify){if(selected){feedback(label+' aplicado a '+selected.userData.title+'.','good');$('hint').textContent=label+' · '+selected.userData.title;perform(id)}else{feedback(label+' en la mano. Ahora tocá una pieza del banco o elegila en la lista.','good');$('hint').textContent=label+' en la mano · Elegí una pieza para aplicarla.'}}
 }
-function onPointerDown(e){if(!started)return;$('game').focus({preventScroll:true});const measuring=stage===1&&tool==='regla';const obj=measuring?pickPieceOnly(e):pick(e);dragState={x:e.clientX,y:e.clientY,obj,mode:obj?.userData.type==='piece'?'piece':obj?'object':'look',moved:false,startYaw:lookYaw,startPitch:lookPitch};if(obj?.userData.type==='piece'){setSelection(obj);dragState.offset=pointOnPlane(e);if(dragState.offset)dragState.offset.sub(obj.position)}renderer.domElement.setPointerCapture?.(e.pointerId) }
+function onPointerDown(e){if(!started||actionAnimation)return;$('game').focus({preventScroll:true});const measuring=stage===1&&tool==='regla';const obj=measuring?pickPieceOnly(e):pick(e);dragState={x:e.clientX,y:e.clientY,obj,mode:obj?.userData.type==='piece'?'piece':obj?'object':'look',moved:false,startYaw:lookYaw,startPitch:lookPitch};if(obj?.userData.type==='piece'){setSelection(obj);dragState.offset=pointOnPlane(e);if(dragState.offset)dragState.offset.sub(obj.position)}renderer.domElement.setPointerCapture?.(e.pointerId) }
 function onPointerMove(e){if(!dragState)return;const dx=e.clientX-dragState.x,dy=e.clientY-dragState.y;if(Math.hypot(dx,dy)>5)dragState.moved=true;if(dragState.mode==='look'&&dragState.moved){lookYaw=dragState.startYaw-dx*.0045;lookPitch=THREE.MathUtils.clamp(dragState.startPitch-dy*.0035,-.95,.12);camera.rotation.set(lookPitch,lookYaw,0)}else if(dragState.mode==='piece'&&dragState.moved&&dragState.obj){const p=pointOnPlane(e);if(p){dragState.obj.position.x=THREE.MathUtils.clamp(p.x+(dragState.offset?.x||0),-3.35,3.35);dragState.obj.position.z=THREE.MathUtils.clamp(p.z+(dragState.offset?.z||0),-1.9,1.9)}}}
 function onPointerUp(e){if(!dragState)return;const d=dragState;dragState=null;const dist=Math.hypot(e.clientX-d.x,e.clientY-d.y);if(d.mode==='object'&&d.obj&&dist<6){if(d.obj.userData.type==='tool')equipTool(d.obj.userData.toolId,true)}else if(d.mode==='piece'&&d.obj){setSelection(d.obj);if(d.moved){if(stage===4&&tool==='mover')snapPiece(d.obj);else feedback(d.obj.userData.title+' movido sobre el banco. Seleccioná una herramienta para trabajarlo.','good')}else if(stage===1&&tool==='regla'&&dist<6){if(!measureMode){measureMode=true;measurePoints.length=0;feedback('Modo medir activado. Hacé clic en dos puntos de la cara superior de la tabla.','good')}captureMeasurePoint(e)}else perform(tool)}}
 function snapPiece(p){const t=targets[p.userData.id];if(!t)return;const distance=Math.hypot(p.position.x-t.x,p.position.z-t.z);if(distance<1.05){p.position.set(t.x,t.y,t.z);p.rotation.set(t.rx,0,0);p.userData.placed=true;placed.add(p.userData.id);actions.add('placed:'+p.userData.id);feedback(p.userData.title+' encastrado en su posición.','good')}else{p.position.y=t.y;feedback('La pieza no llegó a la guía. Arrastrala hasta la marca amarilla.','bad')}renderChecks()}
@@ -164,25 +216,25 @@ function renderPieces(){const root=$('piecePicker');if(!root)return;root.innerHT
 function feedback(s,t=''){const el=$('feedback');el.textContent=s;el.className='feedback '+t}
 function scoreUI(){$('scoreText').textContent=score+' / 100';$('bigScore').innerHTML=score+' <small>/ 100</small>'}
 function penalize(id,n,msg,serious=false){if(penalties.has(id))return;penalties.add(id);score=Math.max(0,score-n);if(serious){grave=true;score=0;$('safety').textContent='INCIDENTE GRAVE';$('safety').style.color='var(--red)'}feedback(msg,'bad');scoreUI()}
-function perform(id){
-if(!selected){feedback('Primero tocá una tabla para seleccionarla.','bad');return}
-const pid=selected.userData.id;actions.add(id+':'+pid);
+function perform(id){if(!selected){feedback('Primero elegí una pieza de la lista o del banco.','bad');return}if(actionAnimation)return;const part=selected;if(!animateToolContact(id,part,null,()=>applyToolAction(id,part)))applyToolAction(id,part)}
+function applyToolAction(id,part){if(!part)return;selected=part;
+const pid=part.userData.id;actions.add(id+':'+pid);
 if(stage===0){
-if(id==='plano'){planOK=true;actions.add('plano');feedback('Plano consultado. Compará las siete piezas del banco con el estante objetivo.','good')}
-else if(id==='lista'){actions.add('lista');feedback('Lista revisada: dos laterales, tapa, base, dos estantes y travesaño.','good')}
-else if(id==='veta'){actions.add('veta');feedback('Veta y caras de '+selected.userData.title+' inspeccionadas.','good')}
+if(id==='plano'){planOK=true;actions.add('plano');addToolVisual(selected,'plan');feedback('Apoyaste y revisaste el plano junto a '+selected.userData.title+'. La ficha quedó visible.','good')}
+else if(id==='lista'){actions.add('lista');addToolVisual(selected,'list');feedback('Lista de corte consultada: dos laterales, tapa, base, dos estantes y travesaño. La ficha quedó sobre la pieza.','good')}
+else if(id==='veta'){actions.add('veta');addToolVisual(selected,'grain');feedback('Inspeccionaste la veta de '+selected.userData.title+'. Las líneas de la fibra quedaron resaltadas.','good')}
 }
 else if(stage===1){
-if(id==='regla'){measureMode=true;measurePoints.length=0;feedback('Regla lista. Hacé clic en dos puntos de la cara superior de '+selected.userData.title+' para medir la distancia entre ellos.','good');$('hint').textContent='MEDICIÓN ACTIVA · marcá el primer extremo sobre la tabla'}
-else if(id==='escuadra'){squareOK=true;actions.add('escuadra');addToolVisual(selected,'square');feedback('Escuadra apoyada en el canto de '+selected.userData.title+'. La marca de 90° quedó visible.','good')}
-else if(id==='lapiz'){if(!measureOK)penalize('mark-no-measure',2,'Marcaste sin medir primero. Medí y volvé a marcar.');else{actions.add('marca');addToolVisual(selected,'mark');feedback('Línea de corte marcada sobre '+selected.userData.title+'. La línea oscura queda visible en la superficie.','good')}}
+if(id==='regla'){measureMode=true;measurePoints.length=0;feedback('La regla se apoyó sobre '+selected.userData.title+'. Hacé clic en dos puntos de la cara superior para medir la distancia real entre ellos.','good');$('hint').textContent='MEDICIÓN ACTIVA · marcá los dos extremos sobre la tabla'}
+else if(id==='escuadra'){squareOK=true;selected.userData.squared=true;actions.add('escuadra');addToolVisual(selected,'square');feedback('La escuadra se apoyó sobre '+selected.userData.title+' y dejó marcada la referencia a 90°.','good')}
+else if(id==='lapiz'){if(!selected.userData.measured)penalize('mark-no-measure-'+pid,2,'Primero medí esta pieza con la regla.');else{selected.userData.marked=true;actions.add('marca');addToolVisual(selected,'mark');feedback('El lápiz trazó una línea sobre '+selected.userData.title+'. La marca queda dibujada en la superficie.','good')}}
 }
 else if(stage===2){
-if(id==='prensa'){clamped=true;actions.add('clamp');addToolVisual(selected,'clamp');feedback('La prensa sujeta '+selected.userData.title+' al banco. La sujeción quedó visible; ahora levantá la sierra.','good')}
-else if(id==='sierra'){if(!clamped)penalize('cut-unsafe',8,'Corte inseguro: usar la sierra sin sujetar la tabla anula el desafío.',true);else if(!measureOK||!actions.has('marca'))penalize('cut-unmarked',4,'Falta completar la medición y el marcado antes del corte.');else if(!cut){cut=true;actions.add('cut');selected.userData.cut=true;if(selected.userData.originalDims.z>selected.userData.originalDims.x)selected.scale.z*=.72;else selected.scale.x*=.72;feedback('Corte realizado. La longitud de '+selected.userData.title+' se redujo en la escena.','good')}else feedback('Esta tabla ya fue cortada.','good')}
+if(id==='prensa'){clamped=true;selected.userData.clamped=true;actions.add('clamp');addToolVisual(selected,'clamp');feedback('La prensa bajó y sujetó '+selected.userData.title+' al banco. Las mordazas quedaron visibles; ahora levantá el serrucho.','good')}
+else if(id==='sierra'){if(!selected.userData.clamped)penalize('cut-unsafe-'+pid,8,'Corte inseguro: esta tabla no está sujeta con la prensa.',true);else if(!selected.userData.measured||!selected.userData.marked)penalize('cut-unmarked-'+pid,4,'Medí y marcá esta misma pieza antes de serruchar.');else if(!selected.userData.cut){cut=true;actions.add('cut');splitPiece(selected);feedback('El serrucho avanzó por la marca y separó '+selected.userData.title+' en dos piezas. El recorte quedó al costado.','good')}else feedback('Esta tabla ya fue cortada.','good')}
 }
 else if(stage===3){
-if(id==='taladro'){drilled.add(pid);actions.add('drill:'+pid);addToolVisual(selected,'holes');feedback('Pretaladro realizado en '+selected.userData.title+'. Se ven los dos orificios.','good')}
+if(id==='taladro'){drilled.add(pid);actions.add('drill:'+pid);addToolVisual(selected,'holes');spawnDust(selected);feedback('El taladro giró y abrió dos orificios en '+selected.userData.title+'. Se ven los agujeros y las virutas.','good')}
 else if(id==='tornillos'){if(!drilled.has(pid))penalize('screw-no-drill-'+pid,3,'Falta pretaladrar esta pieza antes de atornillar.');else{actions.add('fixed:'+pid);addToolVisual(selected,'screws');feedback('Unión atornillada después del pretaladro. Se ven las cabezas de los tornillos.','good')}}
 else if(id==='prensa'){clamped=true;actions.add('align');feedback('Pieza alineada y sujeta para la unión.','good')}
 }
@@ -192,16 +244,16 @@ else if(id==='escuadra'){squareOK=true;actions.add('assembly-square');feedback('
 else if(id==='refuerzo'){reinforced=true;actions.add('reinforce');addToolVisual(selected,'reinforcement');feedback('Refuerzo metálico añadido a la unión. Quedó visible sobre '+selected.userData.title+'.','good')}
 }
 else if(stage===5){
-const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(g===120&&!sanded.has(80)){penalize('skip80',2,'No saltees el grano 80. Lijá primero con 80.');return}if(g===220&&!sanded.has(120)){penalize('skip120',2,'Primero completá el grano 120.');return}sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});feedback('Lijado con grano '+g+' aplicado. La superficie cambió.','good')}
+const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(g===120&&!sanded.has(80)){penalize('skip80',2,'No saltees el grano 80. Lijá primero con 80.');return}if(g===220&&!sanded.has(120)){penalize('skip120',2,'Primero completá el grano 120.');return}sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});spawnDust(selected);feedback('La lija de grano '+g+' recorrió la superficie. La madera se aclaró y salió polvo de lijado.','good')}
 }
 else if(stage===6){
-if(id==='proteger'){protectedBench=true;actions.add('protected');feedback('Banco protegido para no mancharlo.','good')}
-else if(id==='barniz'){if(!protectedBench)penalize('no-protect',1,'Protegé el banco antes de aplicar barniz.');coats=Math.min(2,coats+1);selected.userData.coat=coats;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color('#a86f3e'),.13)});actions.add('coat'+coats);feedback('Capa fina '+coats+' de 2 aplicada.','good')}
-else if(id==='secado'){if(coats===0)feedback('Aplicá una capa de barniz antes de iniciar el secado.','bad');else{actions.add('dry');feedback('Tiempo de secado respetado.','good')}}
+if(id==='proteger'){protectedBench=true;actions.add('protected');if(!benchCover){benchCover=box(scene,7.2,.018,4.2,cloth,0,1.45,0);benchCover.scale.z=.02;visualAnimations.push({kind:'scale',object:benchCover,axis:'z',elapsed:0,duration:.45})}feedback('Desplegaste la manta protectora sobre el banco. La superficie quedó cubierta.','good')}
+else if(id==='barniz'){if(!protectedBench)penalize('no-protect',1,'Protegé el banco antes de aplicar barniz.');coats=Math.min(2,coats+1);selected.userData.coat=coats;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color('#a86f3e'),.13)});addToolVisual(selected,'coat');actions.add('coat'+coats);feedback('La brocha extendió la capa fina '+coats+' de 2 sobre '+selected.userData.title+'. La película húmeda quedó visible.','good')}
+else if(id==='secado'){if(coats===0)feedback('Aplicá una capa de barniz antes de iniciar el secado.','bad');else{actions.add('dry');const coat=selected.userData.visuals?.coat;if(coat)coat.traverse(m=>{if(m.material&&m.material.transparent)visualAnimations.push({kind:'opacity',object:coat,material:m.material,from:m.material.opacity,to:.12,elapsed:0,duration:.8})});feedback('El acabado quedó secando; la película húmeda se vuelve transparente.','good')}}
 }
 else if(stage===7){
-if(id==='gafas'){goggles=true;actions.add('goggles');feedback('Protección ocular puesta.','good')}
-else if(id==='prensa'){finalClamped=true;actions.add('finalclamp');addToolVisual(selected,'clamp');feedback('Pieza sujeta con prensa. La sujeción quedó visible.','good')}
+if(id==='gafas'){goggles=true;actions.add('goggles');$('safety').textContent='GAFAS PUESTAS';$('safety').style.color='var(--green)';feedback('Te pusiste las gafas de protección. La seguridad quedó registrada en el panel.','good')}
+else if(id==='prensa'){finalClamped=true;actions.add('finalclamp');selected.userData.clamped=true;addToolVisual(selected,'clamp');feedback('Pieza sujeta con prensa. La sujeción quedó visible.','good')}
 else if(id==='guardar'){stored=true;actions.add('stored');for(const g of Object.values(worldTools))g.visible=true;heldRoot.clear();heldTool=null;feedback('Herramientas guardadas y banco ordenado.','good')}
 }
 renderChecks();scoreUI()
@@ -212,9 +264,9 @@ $('stageNo').textContent='ETAPA '+(stage+1)+' DE 8';$('stageTitle').textContent=
 function verify(){
 if(grave){finishGame();return}
 if(stage===0&&(!planOK||!actions.has('lista')||!actions.has('veta'))){feedback('Usá el plano, la lista y la inspección de veta sobre una tabla antes de verificar.','bad');return}
-if(stage===1&&(!measureOK||!squareOK||!actions.has('marca'))){feedback('Para medir: elegí Regla y hacé clic en dos puntos sobre la misma tabla. Después usá Escuadra y Lápiz para comprobar y marcar el corte.','bad');return}
-if(stage===2&&!clamped){feedback('Levantá la prensa y sujetá la madera antes de continuar.','bad');return}
-if(stage===2&&!cut){feedback('Levantá la sierra y aplicala sobre la tabla medida, marcada y sujeta.','bad');return}
+if(stage===1&&(!pieces.some(p=>p.userData.measured&&p.userData.squared&&p.userData.marked))){feedback('Sobre una misma pieza: medí entre dos puntos, apoyá la escuadra y trazá la marca con el lápiz.','bad');return}
+if(stage===2&&!pieces.some(p=>p.userData.clamped)){feedback('Usá la prensa sobre la misma tabla que vas a cortar.','bad');return}
+if(stage===2&&!pieces.some(p=>p.userData.cut&&!p.userData.offcut&&p.userData.measured&&p.userData.marked&&p.userData.clamped)){feedback('Medí, marcá, sujetá y serruchá la misma pieza.','bad');return}
 if(stage===3&&(drilled.size===0||![...actions].some(a=>a.startsWith('fixed:')))){feedback('Pretaladrá una pieza y después fijala con tornillos.','bad');return}
 if(stage===4&&placed.size<4){feedback('Encastrá al menos cuatro piezas arrastrándolas hasta sus guías amarillas.','bad');return}
 if(stage===4&&(!actions.has('assembly-square')||!reinforced)){feedback('Comprobá el conjunto con la escuadra y añadí un refuerzo.','bad');return}
