@@ -46,7 +46,7 @@ const allToolIds=[...new Set(toolDefs.flat().map(x=>x[2]))];
 let stage=0,tool='plano',score=100,grave=false,done=Array(8).fill(false),penalties=new Set(),actions=new Set(),selected=null,started=false,startedAt=0,sessionReady=false;
 let cut=false,clamped=false,finalClamped=false,measureOK=false,squareOK=false,planOK=false,reinforced=false,stored=false,goggles=false,protectedBench=false,coats=0;
 const drilled=new Set(),placed=new Set(),sanded=new Set();
-let scene,camera,renderer,raycaster,pointer,dragPlane,heldRoot,heldModel=null,heldTool=null,handLift=1,lookYaw=0,lookPitch=-.23,resizeObs,dragState=null,keys=new Set(),lastFrame=0;
+let scene,camera,renderer,raycaster,pointer,dragPlane,heldRoot,heldModel=null,heldTool=null,handLift=1,lookYaw=0,lookPitch=-.23,resizeObs,dragState=null,keys=new Set(),lastFrame=0,targetGroup,targets;
 const pieces=[],worldTools={};
 const wood=mat('#bd874f'),woodLight=mat('#d9ad72'),woodSide=mat('#916038'),metal=mat('#6c7778',.35),dark=mat('#35423c'),green=mat('#2e5944'),cloth=mat('#b5c6b5');
 function mat(color,roughness=.78){return new THREE.MeshStandardMaterial({color,roughness})}
@@ -97,8 +97,8 @@ createPiece('estanteA','Estante medio',2.2,.12,.42,-.55,1.48,-.45);
 createPiece('estanteB','Estante inferior',2.2,.12,.42,.95,1.48,-.45);
 createPiece('travesano','Travesaño trasero',1.9,.12,.25,2.35,1.48,-1.1);
 const rackIds=['regla','escuadra','lapiz','sierra','prensa','taladro','lija80','barniz','gafas'];rackIds.forEach((id,i)=>createWorldTool(id,-3.1+i*.78,1.62));
-const markerMat=new THREE.MeshBasicMaterial({color:'#e6ba62',transparent:true,opacity:.2,depthWrite:false,side:THREE.DoubleSide});const targetGroup=new THREE.Group();scene.add(targetGroup);
-const targets={
+const markerMat=new THREE.MeshBasicMaterial({color:'#e6ba62',transparent:true,opacity:.2,depthWrite:false,side:THREE.DoubleSide});targetGroup=new THREE.Group();scene.add(targetGroup);
+targets={
 lateralA:{x:-1.16,y:2.42,z:-.02,rx:Math.PI/2},lateralB:{x:1.16,y:2.42,z:-.02,rx:Math.PI/2},
 base:{x:0,y:1.48,z:0,rx:0},estanteB:{x:0,y:1.78,z:0,rx:0},estanteA:{x:0,y:2.10,z:0,rx:0},tapa:{x:0,y:2.42,z:0,rx:0},travesano:{x:0,y:2.18,z:-.17,rx:0}
 };
