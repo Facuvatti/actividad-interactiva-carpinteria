@@ -214,7 +214,7 @@ try{if(window.LessonSDK&&sessionReady&&LessonSDK.getSession()){const sent=Lesson
 }
 $('verify').addEventListener('click',verify);
 $('next').addEventListener('click',()=>{if(stage<7&&done[stage]){stage++;updateUI();feedback('Nueva etapa: '+stageNames[stage]+'. La herramienta ya está en tu mano.')}});
-$('start').addEventListener('click',()=>{$('intro').classList.add('hidden');started=true;startedAt=Date.now();try{if(window.LessonSDK){LessonSDK.init({parentOrigin:'https://taller.creatucurso.com.ar'})}}catch(e){console.warn('No se pudo iniciar el bridge',e)}updateUI();feedback('Elegí una herramienta o tocá una del banco para levantarla.');$('game').focus({preventScroll:true})});
+$('start').addEventListener('click',()=>{$('intro').classList.add('hidden');started=true;startedAt=Date.now();try{if(window.LessonSDK){LessonSDK.init({parentOrigin:'https://taller.creatucurso.com.ar'})}}catch(e){console.warn('No se pudo iniciar el bridge',e)}updateUI();feedback('Elegí una pieza en la lista o en el banco. La herramienta activa se aplica al seleccionarla; también podés elegir la herramienta después.');$('game').focus({preventScroll:true})});
 $('retry').addEventListener('click',()=>location.reload());
 window.addEventListener('lesson:session',()=>{sessionReady=true});
 window.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(['w','a','s','d'].includes(k)){keys.add(k);e.preventDefault()}if(k==='escape'){keys.clear()}});window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));window.addEventListener('blur',()=>keys.clear());
