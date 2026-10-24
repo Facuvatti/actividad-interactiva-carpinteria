@@ -128,6 +128,7 @@ function updateActionAnimation(dt){
 function updateVisualAnimations(dt){
  for(let i=visualAnimations.length-1;i>=0;i--){const a=visualAnimations[i],t=Math.min(1,(a.elapsed+=dt)/a.duration);
   if(a.kind==='scale')a.object.scale[a.axis]=Math.max(.015,t);
+  else if(a.kind==='uniformScale')a.object.scale.setScalar(.015+.985*t);
   else if(a.kind==='opacity')a.material.opacity=a.from+(a.to-a.from)*t;
   else if(a.kind==='dust'){a.object.position.set(a.start.x+a.vx*t,a.start.y+a.vy*t,a.start.z+a.vz*t);a.object.material.opacity=1-t;a.object.scale.setScalar(1+t*1.4)}
   if(t>=1){if(a.kind==='opacity')a.material.opacity=a.to;if(a.kind==='dust'){scene.remove(a.object);a.object.geometry.dispose();a.object.material.dispose()}visualAnimations.splice(i,1)}
@@ -176,10 +177,11 @@ function addToolVisual(p,kind){
  else if(kind==='holes'||kind==='screws'){for(const sign of [-1,1]){const x=alongZ?0:sign*(dims.x*.22),z=alongZ?sign*(dims.z*.22):0;cylinder(g,kind==='holes'?.026:.035,kind==='holes'?.026:.035,.014,kind==='holes'?hole:steel,x,top,z)}}
  else if(kind==='clamp'){if(alongZ){box(g,dims.x+.1,.07,.07,steel,0,surface+.01,-dims.z*.28);box(g,dims.x+.1,.07,.07,steel,0,surface+.01,dims.z*.28)}else{box(g,.07,.07,dims.z+.1,steel,-dims.x*.28,surface+.01,0);box(g,.07,.07,dims.z+.1,steel,dims.x*.28,surface+.01,0)}}
  else if(kind==='reinforcement'){box(g,.22,.025,.05,steel,-dims.x*.25,surface+.014,-dims.z*.25);box(g,.05,.025,.22,steel,-dims.x*.25,surface+.014,-dims.z*.25)}
- else if(kind==='coat'){const wet=new THREE.Mesh(new THREE.BoxGeometry(dims.x*.92,.01,dims.z*.92),new THREE.MeshStandardMaterial({color:'#d4a15e',roughness:.25,transparent:true,opacity:.55,depthWrite:false}));wet.position.y=top;g.add(wet)}
+ else if(kind.startsWith('coat')){const wet=new THREE.Mesh(new THREE.BoxGeometry(dims.x*.92,.01,dims.z*.92),new THREE.MeshStandardMaterial({color:'#d4a15e',roughness:.25,transparent:true,opacity:.55,depthWrite:false}));wet.position.y=top;g.add(wet)}
  else if(kind==='plan'||kind==='list'){box(g,Math.min(.48,dims.x*.7),.015,Math.min(.32,dims.z*.7),mat('#f5edcf'),0,top+.025,0);for(let i=0;i<3;i++)box(g,Math.min(.32,dims.x*.48),.008,.01,kind==='plan'?mat('#587a5b'):mat('#887a5d'),0,top+.04,-.07+i*.045)}
  else if(kind==='grain'){for(let i=-2;i<=2;i++){if(alongZ)box(g,.012,.006,dims.z*.68,mat('#e7c181'),i*dims.x*.12,top+.015,0);else box(g,dims.x*.68,.006,.012,mat('#e7c181'),0,top+.015,i*dims.z*.12)}}
- if(kind==='mark'||kind==='coat'){const axis=alongZ?'z':'x';g.scale[axis]=.015;visualAnimations.push({kind:'scale',object:g,axis,elapsed:0,duration:kind==='mark'?.55:.85})}
+ if(kind==='mark'||kind.startsWith('coat')){const axis=alongZ?'z':'x';g.scale[axis]=.015;visualAnimations.push({kind:'scale',object:g,axis,elapsed:0,duration:kind==='mark'?.55:.85})}
+ else if(['square','holes','screws','clamp','reinforcement','plan','list','grain','measure'].includes(kind)){g.scale.setScalar(.015);visualAnimations.push({kind:'uniformScale',object:g,elapsed:0,duration:.36})}
  p.add(g);p.userData.visuals[kind]=g;
 }
 function equipTool(id,notify=true){
