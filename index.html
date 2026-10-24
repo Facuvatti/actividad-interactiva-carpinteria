@@ -161,7 +161,7 @@ else if(id==='escuadra'){squareOK=true;actions.add('assembly-square');feedback('
 else if(id==='refuerzo'){reinforced=true;actions.add('reinforce');feedback('Refuerzo añadido a la unión estructural.','good')}
 }
 else if(stage===5){
-const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(g===120&&!sanded.has(80)){penalize('skip80',2,'No saltees el grano 80. Lijá primero con 80.');return}if(g===220&&!sanded.has(120)){penalize('skip120',2,'Primero completá el grano 120.');return}sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color&&!o.parent?.userData?.type)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});feedback('Lijado con grano '+g+' aplicado. La superficie cambió.','good')}
+const g={lija80:80,lija120:120,lija220:220}[id];if(g){if(g===120&&!sanded.has(80)){penalize('skip80',2,'No saltees el grano 80. Lijá primero con 80.');return}if(g===220&&!sanded.has(120)){penalize('skip120',2,'Primero completá el grano 120.');return}sanded.add(g);selected.userData.sanded=g;selected.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.lerp(new THREE.Color(g===80?'#bc976a':g===120?'#cfb185':'#e0c89d'),.25)});feedback('Lijado con grano '+g+' aplicado. La superficie cambió.','good')}
 }
 else if(stage===6){
 if(id==='proteger'){protectedBench=true;actions.add('protected');feedback('Banco protegido para no mancharlo.','good')}
@@ -177,7 +177,7 @@ renderChecks();scoreUI()
 }
 function renderChecks(){const items=['Plano, lista y veta inspeccionados','Medida, escuadra y marcado correctos','Tabla sujeta y cortada','Pretaladro antes de fijar','Piezas encastradas y conjunto estable','Lijado 80 → 120 → 220','Dos capas y secado','Gafas, sujeción y orden'];$('checks').innerHTML=items.map((x,i)=>'<div class="check"><span class="dot '+(done[i]?'done':'')+'">'+(done[i]?'✓':'')+'</span><span>'+x+'</span></div>').join('')}
 function updateUI(){
-$('stageNo').textContent='ETAPA '+(stage+1)+' DE 8';$('stageTitle').textContent=stageNames[stage];$('desc').textContent=stageDesc[stage];$('progress').style.width=(done.filter(Boolean).length/8*100)+'%';$('progressText').textContent=done.filter(Boolean).length+' / 8';$('verify').textContent=stage===7?'Terminar desafío':'Verificar etapa';$('next').disabled=!done[stage]||stage===7;targetGroup.visible=stage===4;tool=toolDefs[stage][0][2];toolButtonRender();equipTool(tool,false);renderChecks()}
+$('stageNo').textContent='ETAPA '+(stage+1)+' DE 8';$('stageTitle').textContent=stageNames[stage];$('desc').textContent=stageDesc[stage];$('progress').style.width=(done.filter(Boolean).length/8*100)+'%';$('progressText').textContent=done.filter(Boolean).length+' / 8';$('verify').textContent=stage===7?'Terminar desafío':'Verificar etapa';$('next').disabled=!done[stage]||stage===7;targetGroup.visible=stage===4;tool=toolDefs[stage][0][2];toolButtonRender();if(!(stage===7&&done[7]))equipTool(tool,false);renderChecks()}
 function verify(){
 if(grave){finishGame();return}
 if(stage===0&&(!planOK||!actions.has('lista')||!actions.has('veta'))){feedback('Usá el plano, la lista y la inspección de veta sobre una tabla antes de verificar.','bad');return}
